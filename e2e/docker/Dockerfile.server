@@ -1,0 +1,41 @@
+# Test server container with SSH and log generator
+FROM alpine:3.19
+
+RUN apk add --no-cache openssh-server ca-certificates \
+    && ssh-keygen -A \
+    && mkdir -p /var/log /run/sshd
+
+# Create test user with passwordless sudo (not installed, just for SSH)
+RUN adduser -D -s /bin/sh testuser \
+    && echo "testuser:testpass" | chpasswd
+
+# Setup SSH to accept key auth
+RUN mkdir -p /home/testuser/.ssh \
+    && chmod 700 /home/testuser/.ssh \
+    && chown testuser:testuser /home/testuser/.ssh
+
+# Copy public key (will be mounted or generated)
+COPY authorized_keys /home/testuser/.ssh/authorized_keys
+RUN chmod 600 /home/testuser/.ssh/authorized_keys \
+    && chown testuser:testuser /home/testuser/.ssh/authorized_keys
+
+# Configure SSH
+RUN echo "PermitRootLogin no" >> /etc/ssh/sshd_config \
+    && echo "PasswordAuthentication no" >> /etc/ssh/sshd_config \
+    && echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
+
+# Copy and build log generator
+COPY loggen-binary /usr/local/bin/loggen
+RUN chmod +x /usr/local/bin/loggen
+
+# Create log file
+RUN touch /var/log/testapp.log \
+    && chown testuser:testuser /var/log/testapp.log
+
+# Start script
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+EXPOSE 22
+
+CMD ["/start.sh"]

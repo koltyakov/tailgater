@@ -1,0 +1,46 @@
+services:
+  server-1:
+    build:
+      context: ./tmp
+      dockerfile: ../docker/Dockerfile.server
+    hostname: server-1
+    environment:
+      - HOSTNAME=server-1
+    volumes:
+      - ./ssh_keys/authorized_keys:/home/testuser/.ssh/authorized_keys:ro
+    ports:
+      - "2221:22"
+    networks:
+      - tailgater-test
+
+  server-2:
+    build:
+      context: ./tmp
+      dockerfile: ../docker/Dockerfile.server
+    hostname: server-2
+    environment:
+      - HOSTNAME=server-2
+    volumes:
+      - ./ssh_keys/authorized_keys:/home/testuser/.ssh/authorized_keys:ro
+    ports:
+      - "2222:22"
+    networks:
+      - tailgater-test
+
+  server-3:
+    build:
+      context: ./tmp
+      dockerfile: ../docker/Dockerfile.server
+    hostname: server-3
+    environment:
+      - HOSTNAME=server-3
+    volumes:
+      - ./ssh_keys/authorized_keys:/home/testuser/.ssh/authorized_keys:ro
+    ports:
+      - "2223:22"
+    networks:
+      - tailgater-test
+
+networks:
+  tailgater-test:
+    driver: bridge

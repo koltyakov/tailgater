@@ -123,6 +123,33 @@ Open `http://localhost:8080` for a dashboard with:
 - Error/warning highlighting
 - Pause scroll / clear controls
 
+## Development
+
+### Building
+
+```bash
+make build
+```
+
+### Testing
+
+Run unit tests:
+
+```bash
+make test
+```
+
+Run e2e tests with Docker containers:
+
+```bash
+cd e2e
+./setup.sh        # Start test containers
+../tailgater -config tailgater.e2e.yaml
+./cleanup.sh      # Stop and clean up
+```
+
+The e2e setup creates 3 containers that generate realistic logs with errors and warnings, useful for testing both CLI and web modes.
+
 ## Security
 
 - Use SSH keys, not passwords

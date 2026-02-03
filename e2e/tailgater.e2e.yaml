@@ -1,0 +1,50 @@
+# E2E Test Configuration for Tailgater
+# Tests against local Docker containers
+
+servers:
+  - name: server-1
+    host: localhost
+    port: 2221
+    user: testuser
+    private_key: ./ssh_keys/id_rsa
+    insecure_skip_verify: true
+
+  - name: server-2
+    host: localhost
+    port: 2222
+    user: testuser
+    private_key: ./ssh_keys/id_rsa
+    insecure_skip_verify: true
+
+  - name: server-3
+    host: localhost
+    port: 2223
+    user: testuser
+    private_key: ./ssh_keys/id_rsa
+    insecure_skip_verify: true
+
+tail:
+  files:
+    - /var/log/testapp.log
+  options: "-f -n 0"
+
+highlights:
+  - name: error
+    pattern: '(?i)\b(error|fatal|critical|panic)\b'
+    color: red
+    bold: true
+
+  - name: warning
+    pattern: '(?i)\b(warn|warning|caution)\b'
+    color: yellow
+    bold: true
+
+  - name: success
+    pattern: '(?i)\b(success|ok|done|completed)\b'
+    color: green
+    bold: false
+
+web:
+  enabled: true
+  host: 127.0.0.1
+  port: 8888

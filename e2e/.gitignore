@@ -1,0 +1,12 @@
+# Generated SSH keys
+ssh_keys/
+
+# Temporary build files (copied to build context)
+tmp/
+
+# Built binaries
+docker/loggen
+loggen/loggen
+
+# Docker runtime
+.dockerignore
