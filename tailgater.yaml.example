@@ -1,0 +1,87 @@
+# Tailgater Configuration File
+# Copy this file to tailgater.yaml or ~/.tailgater.yaml and customize
+
+# SSH Server configurations
+servers:
+  - name: web-server-1
+    host: 192.168.1.10
+    port: 22
+    user: admin
+    private_key: ~/.ssh/id_rsa
+    # password: "optional-password"  # Use only if not using key auth
+    known_hosts: ~/.ssh/known_hosts
+    # insecure_skip_verify: false  # Set to true to skip host key verification (not recommended)
+    env:
+      TERM: xterm-256color
+
+  - name: db-server-1
+    host: 192.168.1.11
+    port: 22
+    user: dbadmin
+    private_key: ~/.ssh/id_rsa
+    known_hosts: ~/.ssh/known_hosts
+
+  - name: api-server-1
+    host: 192.168.1.12
+    port: 22
+    user: ubuntu
+    private_key: ~/.ssh/id_rsa
+    known_hosts: ~/.ssh/known_hosts
+
+# Tail command configuration
+tail:
+  # Files to tail on each server
+  files:
+    - /var/log/syslog
+    - /var/log/auth.log
+  # Tail options (default: -f -n 0)
+  options: "-f -n 100"
+
+# Highlight rules for log lines
+# Colors: red, yellow, green, cyan, blue, magenta, white
+highlights:
+  - name: error
+    pattern: '(?i)\b(error|fatal|critical|panic|exception)\b'
+    color: red
+    bold: true
+
+  - name: warning
+    pattern: '(?i)\b(warn|warning|caution)\b'
+    color: yellow
+    bold: true
+
+  - name: success
+    pattern: '(?i)\b(success|ok|done|completed|finished)\b'
+    color: green
+    bold: false
+
+  - name: info
+    pattern: '(?i)\b(info|information|notice)\b'
+    color: cyan
+    bold: false
+
+  - name: http_error
+    pattern: '\b(5\d{2}|4\d{2})\b'
+    color: red
+    bold: true
+
+  - name: http_success
+    pattern: '\b(2\d{2})\b'
+    color: green
+    bold: false
+
+  - name: ip_address
+    pattern: '\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+    color: blue
+    bold: false
+
+  - name: timestamp
+    pattern: '\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}\b'
+    color: magenta
+    bold: false
+
+# Web dashboard configuration
+web:
+  enabled: true
+  host: 0.0.0.0
+  port: 8080
