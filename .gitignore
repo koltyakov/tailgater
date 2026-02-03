@@ -35,4 +35,8 @@ go.work.sum
 tailgater
 tailgater.yaml
 !tailgater.yaml.example
+!cmd/tailgater
 *.log
+
+# OS generated files
+.DS_Store
