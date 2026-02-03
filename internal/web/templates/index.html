@@ -11,190 +11,282 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
+            background: #0d1117;
+            color: #c9d1d9;
+            display: flex;
+            flex-direction: column;
         }
 
         .header {
-            background: #16213e;
-            padding: 1rem 2rem;
-            border-bottom: 1px solid #0f3460;
+            background: #161b22;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #30363d;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
 
         .header h1 {
-            color: #e94560;
-            font-size: 1.5rem;
+            color: #58a6ff;
+            font-size: 1.25rem;
+            font-weight: 600;
         }
 
         .header .status {
             display: flex;
-            gap: 1rem;
+            gap: 0.75rem;
             align-items: center;
+            font-size: 0.875rem;
         }
 
         .status-indicator {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #4ecca3;
+            background: #238636;
             animation: pulse 2s infinite;
         }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.4; }
         }
 
-        .dashboard {
-            padding: 2rem;
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 280px;
+            background: #161b22;
+            border-right: 1px solid #30363d;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .stats-section {
+            padding: 1rem;
+            border-bottom: 1px solid #30363d;
         }
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
         }
 
         .stat-card {
-            background: #16213e;
-            padding: 1.5rem;
-            border-radius: 8px;
-            border: 1px solid #0f3460;
+            background: #0d1117;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #30363d;
         }
 
         .stat-card h3 {
-            font-size: 0.875rem;
-            color: #a0a0a0;
-            margin-bottom: 0.5rem;
+            font-size: 0.625rem;
+            color: #8b949e;
+            margin-bottom: 0.25rem;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .stat-card .value {
-            font-size: 2rem;
-            font-weight: bold;
+            font-size: 1.5rem;
+            font-weight: 600;
             color: #fff;
         }
 
-        .stat-card.error .value { color: #e94560; }
-        .stat-card.warning .value { color: #f4d03f; }
-        .stat-card.success .value { color: #4ecca3; }
+        .stat-card.error .value { color: #f85149; }
+        .stat-card.warning .value { color: #d29922; }
+        .stat-card.success .value { color: #3fb950; }
+
+        .filter-section {
+            padding: 1rem;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .filter-section h3 {
+            font-size: 0.75rem;
+            color: #8b949e;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .filter-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            padding: 0.375rem 0.5rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .filter-option:hover {
+            background: #0d1117;
+        }
+
+        .filter-option input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            accent-color: #58a6ff;
+        }
+
+        .filter-option .filter-label {
+            font-size: 0.8125rem;
+            color: #c9d1d9;
+        }
+
+        .filter-option .filter-count {
+            margin-left: auto;
+            font-size: 0.6875rem;
+            padding: 0.125rem 0.375rem;
+            border-radius: 10px;
+            background: #30363d;
+            color: #8b949e;
+        }
+
+        .filter-option.error .filter-label { color: #f85149; }
+        .filter-option.warning .filter-label { color: #d29922; }
+        .filter-option.info .filter-label { color: #58a6ff; }
+        .filter-option.debug .filter-label { color: #8b949e; }
 
         .servers-section {
-            margin-bottom: 2rem;
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
         }
 
-        .servers-section h2 {
-            margin-bottom: 1rem;
-            color: #fff;
+        .servers-section h3 {
+            font-size: 0.75rem;
+            color: #8b949e;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .servers-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1rem;
+        .server-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
         }
 
-        .server-card {
-            background: #16213e;
-            border-radius: 8px;
-            border: 1px solid #0f3460;
-            overflow: hidden;
-            transition: border-color 0.3s;
+        .server-item {
+            background: #0d1117;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+            padding: 0.75rem;
+            transition: border-color 0.2s;
         }
 
-        .server-card:hover {
-            border-color: #e94560;
+        .server-item:hover {
+            border-color: #58a6ff;
         }
 
-        .server-card.has-errors {
-            border-left: 4px solid #e94560;
+        .server-item.has-errors {
+            border-left: 3px solid #f85149;
         }
 
-        .server-card.has-warnings {
-            border-left: 4px solid #f4d03f;
+        .server-item.has-warnings {
+            border-left: 3px solid #d29922;
         }
 
-        .server-card.connected {
-            border-left: 4px solid #4ecca3;
+        .server-item.connected {
+            border-left: 3px solid #3fb950;
         }
 
         .server-header {
-            padding: 1rem;
-            background: #0f3460;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .server-header .filter-option {
+            padding: 0;
+        }
+
+        .server-header .filter-option:hover {
+            background: transparent;
         }
 
         .server-name {
-            font-weight: bold;
+            font-size: 0.8125rem;
+            font-weight: 600;
             color: #fff;
         }
 
         .server-status {
-            font-size: 0.75rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            background: #4ecca3;
-            color: #000;
-        }
-
-        .server-status.disconnected {
-            background: #e94560;
+            font-size: 0.625rem;
+            padding: 0.125rem 0.375rem;
+            border-radius: 10px;
+            background: #238636;
             color: #fff;
         }
 
+        .server-status.disconnected {
+            background: #da3633;
+        }
+
         .server-stats {
-            padding: 1rem;
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            display: flex;
             gap: 1rem;
-            text-align: center;
         }
 
         .server-stat {
             display: flex;
-            flex-direction: column;
+            align-items: center;
             gap: 0.25rem;
-        }
-
-        .server-stat .label {
-            font-size: 0.75rem;
-            color: #a0a0a0;
+            font-size: 0.6875rem;
+            color: #8b949e;
         }
 
         .server-stat .count {
-            font-size: 1.25rem;
-            font-weight: bold;
+            font-weight: 600;
+            color: #fff;
         }
 
-        .server-stat.errors .count { color: #e94560; }
-        .server-stat.warnings .count { color: #f4d03f; }
-        .server-stat.lines .count { color: #4ecca3; }
+        .server-stat.errors .count { color: #f85149; }
+        .server-stat.warnings .count { color: #d29922; }
 
-        .logs-section {
-            background: #16213e;
-            border-radius: 8px;
-            border: 1px solid #0f3460;
+        .logs-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
         }
 
         .logs-header {
-            padding: 1rem;
-            background: #0f3460;
+            padding: 0.75rem 1rem;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
 
         .logs-header h2 {
+            font-size: 0.875rem;
+            font-weight: 600;
             color: #fff;
         }
 
@@ -204,190 +296,627 @@
         }
 
         .log-controls button {
-            padding: 0.5rem 1rem;
-            border: none;
+            padding: 0.375rem 0.75rem;
+            border: 1px solid #30363d;
             border-radius: 4px;
-            background: #e94560;
-            color: #fff;
+            background: #21262d;
+            color: #c9d1d9;
             cursor: pointer;
-            font-size: 0.875rem;
+            font-size: 0.75rem;
+            transition: all 0.2s;
         }
 
         .log-controls button:hover {
-            background: #c73e54;
+            background: #30363d;
+            border-color: #8b949e;
+        }
+
+        .log-controls button.active {
+            background: #1f6feb;
+            border-color: #58a6ff;
+            color: #fff;
+        }
+
+        .logs-table-header {
+            display: grid;
+            grid-template-columns: 70px 120px 1fr;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: #0d1117;
+            border-bottom: 1px solid #30363d;
+            font-size: 0.6875rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
         }
 
         .logs-container {
-            height: 500px;
+            flex: 1;
             overflow-y: auto;
-            padding: 1rem;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.875rem;
-            line-height: 1.5;
+            overflow-x: hidden;
+            font-family: 'SFMono-Regular', 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 0.8125rem;
+            line-height: 1.4;
+            position: relative;
+        }
+
+        .virtual-viewport {
+            min-height: 100%;
+        }
+
+        .virtual-content {
+            width: 100%;
+            position: relative;
+            min-height: 0;
         }
 
         .log-line {
-            padding: 0.25rem 0;
-            border-bottom: 1px solid #1a1a2e;
-            white-space: pre-wrap;
-            word-break: break-all;
+            display: grid;
+            grid-template-columns: 70px 120px 1fr;
+            gap: 0.5rem;
+            padding: 0.25rem 1rem;
+            border-bottom: 1px solid #21262d;
+            transition: background 0.1s;
+            box-sizing: border-box;
+            overflow: hidden;
         }
 
         .log-line:hover {
-            background: #1a1a2e;
+            background: #161b22;
         }
 
-        .log-line.error { color: #e94560; }
-        .log-line.warning { color: #f4d03f; }
-        .log-line.info { color: #4ecca3; }
-
-        .log-timestamp {
-            color: #666;
-            margin-right: 0.5rem;
+        .log-time {
+            color: #6e7681;
+            font-size: 0.75rem;
+            white-space: nowrap;
         }
 
         .log-server {
-            color: #e94560;
-            font-weight: bold;
-            margin-right: 0.5rem;
+            color: #58a6ff;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+
+        .log-content {
+            color: #c9d1d9;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+
+        .log-line.error .log-content { color: #f85149; }
+        .log-line.warning .log-content { color: #d29922; }
+        .log-line.info .log-content { color: #58a6ff; }
 
         .empty-state {
-            text-align: center;
-            padding: 4rem;
-            color: #666;
-        }
-
-        .connection-status {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            padding: 0.75rem 1rem;
-            background: #16213e;
-            border: 1px solid #0f3460;
-            border-radius: 4px;
             display: flex;
+            flex-direction: column;
             align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6e7681;
             gap: 0.5rem;
         }
 
-        .connection-status.connected {
-            border-color: #4ecca3;
+        .empty-state-icon {
+            font-size: 2rem;
+            opacity: 0.5;
         }
 
-        .connection-status.disconnected {
-            border-color: #e94560;
+        .paused-indicator {
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            padding: 0.25rem 0.5rem;
+            background: #d29922;
+            color: #0d1117;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            border-radius: 4px;
+            display: none;
+            z-index: 100;
+        }
+
+        .paused-indicator.visible {
+            display: block;
+        }
+
+        .logs-wrapper {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
         }
 
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
         }
 
         ::-webkit-scrollbar-track {
-            background: #1a1a2e;
+            background: #0d1117;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #0f3460;
-            border-radius: 4px;
+            background: #30363d;
+            border-radius: 5px;
+            border: 2px solid #0d1117;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #e94560;
+            background: #8b949e;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Tailgater Dashboard</h1>
+        <h1>📋 Tailgater</h1>
         <div class="status">
             <span id="ws-status">Connecting...</span>
             <div class="status-indicator" id="status-indicator"></div>
         </div>
     </div>
 
-    <div class="dashboard">
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Total Lines</h3>
-                <div class="value" id="total-lines">0</div>
-            </div>
-            <div class="stat-card error">
-                <h3>Errors</h3>
-                <div class="value" id="total-errors">0</div>
-            </div>
-            <div class="stat-card warning">
-                <h3>Warnings</h3>
-                <div class="value" id="total-warnings">0</div>
-            </div>
-            <div class="stat-card success">
-                <h3>Lines/sec</h3>
-                <div class="value" id="lines-per-sec">0</div>
-            </div>
-        </div>
-
-        <div class="servers-section">
-            <h2>Servers</h2>
-            <div class="servers-grid" id="servers-grid">
-                {{range .Servers}}
-                <div class="server-card" id="server-{{.Name}}">
-                    <div class="server-header">
-                        <span class="server-name">{{.Name}}</span>
-                        <span class="server-status disconnected" id="status-{{.Name}}">Disconnected</span>
+    <div class="main-layout">
+        <aside class="sidebar">
+            <div class="stats-section">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Lines</h3>
+                        <div class="value" id="total-lines">0</div>
                     </div>
-                    <div class="server-stats">
-                        <div class="server-stat lines">
-                            <span class="label">Lines</span>
-                            <span class="count" id="lines-{{.Name}}">0</span>
-                        </div>
-                        <div class="server-stat errors">
-                            <span class="label">Errors</span>
-                            <span class="count" id="errors-{{.Name}}">0</span>
-                        </div>
-                        <div class="server-stat warnings">
-                            <span class="label">Warnings</span>
-                            <span class="count" id="warnings-{{.Name}}">0</span>
-                        </div>
+                    <div class="stat-card error">
+                        <h3>Errors</h3>
+                        <div class="value" id="total-errors">0</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <h3>Warnings</h3>
+                        <div class="value" id="total-warnings">0</div>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>Lines/sec</h3>
+                        <div class="value" id="lines-per-sec">0</div>
                     </div>
                 </div>
-                {{end}}
             </div>
-        </div>
 
-        <div class="logs-section">
+            <div class="filter-section">
+                <h3>Filter</h3>
+                <div class="search-box" style="margin-bottom: 1rem; position: relative;">
+                    <input type="text" id="search-input" placeholder="Filter logs..." 
+                        style="width: 100%; padding: 0.5rem 2rem 0.5rem 0.5rem; border: 1px solid #30363d; border-radius: 4px; 
+                               background: #0d1117; color: #c9d1d9; font-size: 0.8125rem; box-sizing: border-box;">
+                    <span id="search-clear" onclick="clearSearch()" 
+                        style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); 
+                               cursor: pointer; color: #6e7681; font-size: 1rem; display: none; padding: 0 0.25rem;">×</span>
+                </div>
+                
+                <h3 style="margin-top: 1rem;">Filter by Level</h3>
+                <div class="filter-options">
+                    <label class="filter-option error">
+                        <input type="checkbox" value="error" checked data-filter="level">
+                        <span class="filter-label">Error</span>
+                        <span class="filter-count" id="count-error">0</span>
+                    </label>
+                    <label class="filter-option warning">
+                        <input type="checkbox" value="warning" checked data-filter="level">
+                        <span class="filter-label">Warning</span>
+                        <span class="filter-count" id="count-warning">0</span>
+                    </label>
+                    <label class="filter-option info">
+                        <input type="checkbox" value="info" checked data-filter="level">
+                        <span class="filter-label">Info</span>
+                        <span class="filter-count" id="count-info">0</span>
+                    </label>
+                    <label class="filter-option debug">
+                        <input type="checkbox" value="debug" checked data-filter="level">
+                        <span class="filter-label">Debug / Other</span>
+                        <span class="filter-count" id="count-debug">0</span>
+                    </label>
+                </div>
+                
+            </div>
+
+            <div class="servers-section">
+                <h3>Servers</h3>
+                <div class="server-list" id="server-list">
+                    {{range .Servers}}
+                    <div class="server-item" id="server-{{.Name}}">
+                        <div class="server-header">
+                            <label class="filter-option" style="flex: 1; margin: 0; padding: 0; gap: 0.5rem;">
+                                <input type="checkbox" value="{{.Name}}" checked data-filter="server">
+                                <span class="server-name">{{.Name}}</span>
+                            </label>
+                            <span class="server-status disconnected" id="status-{{.Name}}">OFF</span>
+                        </div>
+                        <div class="server-stats">
+                            <div class="server-stat">
+                                <span class="count" id="lines-{{.Name}}">0</span> lines
+                            </div>
+                            <div class="server-stat errors">
+                                <span class="count" id="errors-{{.Name}}">0</span> err
+                            </div>
+                            <div class="server-stat warnings">
+                                <span class="count" id="warnings-{{.Name}}">0</span> warn
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </aside>
+
+        <main class="logs-panel">
             <div class="logs-header">
                 <h2>Live Logs</h2>
                 <div class="log-controls">
-                    <button onclick="clearLogs()">Clear</button>
-                    <button onclick="toggleAutoScroll()">Auto-scroll</button>
+                    <button id="btn-autoscroll" class="active" onclick="toggleAutoScroll()">Auto-scroll</button>
+                    <button id="btn-jump-top" onclick="enableAutoScroll()" style="display: none;">Jump to Top ↓</button>
                 </div>
             </div>
-            <div class="logs-container" id="logs-container">
-                <div class="empty-state">Waiting for logs...</div>
+            <div class="logs-table-header">
+                <span>Time</span>
+                <span>Server</span>
+                <span>Message</span>
             </div>
-        </div>
-    </div>
-
-    <div class="connection-status disconnected" id="connection-status">
-        <div class="status-indicator" id="conn-indicator"></div>
-        <span id="conn-text">Disconnected</span>
+            <div class="logs-wrapper">
+                <div class="paused-indicator" id="paused-indicator">PAUSED</div>
+                <div class="logs-container" id="logs-container">
+                    <div class="virtual-content" id="virtual-content" style="position: relative;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <div>Waiting for logs...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
     <script>
+        // Virtual scrolling configuration
+        const LOG_HEIGHT = 22;
+        const BUFFER_SIZE = 15;
+        const PAGE_SIZE = 200;
+        
         let ws;
         let autoScroll = true;
-        let logCount = 0;
-        const maxLogs = 1000;
+        let userScrolling = false;
+        let scrollTimeout = null;
+        let isSearching = false;
+        let searchQuery = '';
+        
+        // Data storage
+        let logs = []; // Current visible logs from DB
+        let totalCount = 0;
+        let currentOffset = 0;
+        let hasMoreLogs = true;
+        let isLoading = false;
+        let activeLevelFilters = new Set(['error', 'warning', 'info', 'debug']);
+        let activeServerFilters = new Set();
+        
+        let sessionCounts = { error: 0, warning: 0, info: 0, debug: 0 }; // Session totals across all servers
+        let filterCounts = { error: 0, warning: 0, info: 0, debug: 0 }; // Filtered counts across active servers
+        let serverLevelCounts = {}; // Track counts per server per level: { serverName: { error: 0, warning: 0, info: 0, debug: 0 } }
         let lastLinesTime = Date.now();
         let linesInLastSecond = 0;
+        
+        // DOM elements
+        let container, contentSpacer;
+
+        async function init() {
+            container = document.getElementById('logs-container');
+            contentSpacer = document.getElementById('virtual-content');
+            
+            // Setup scroll listener
+            container.addEventListener('scroll', handleScroll, { passive: true });
+            
+            // Initialize server filters from checkboxes
+            document.querySelectorAll('[data-filter="server"]').forEach(cb => {
+                if (cb.checked) {
+                    activeServerFilters.add(cb.value);
+                }
+            });
+            
+            // Setup filter listeners
+            document.querySelectorAll('[data-filter="level"]').forEach(cb => {
+                cb.addEventListener('change', handleLevelFilterChange);
+            });
+            document.querySelectorAll('[data-filter="server"]').forEach(cb => {
+                cb.addEventListener('change', handleServerFilterChange);
+            });
+            
+            // Setup search
+            setupSearch();
+            
+            // Load initial logs and counts
+            await Promise.all([
+                loadLogs(),
+                updateFilterCountsFromAPI()
+            ]);
+
+            connect();
+            renderFrame();
+        }
+
+        function setupSearch() {
+            const input = document.getElementById('search-input');
+            const clearBtn = document.getElementById('search-clear');
+            
+            // Real-time filtering on input
+            input.addEventListener('input', (e) => {
+                searchQuery = e.target.value.trim();
+                isSearching = searchQuery.length > 0;
+                
+                // Show/hide clear button
+                clearBtn.style.display = searchQuery.length > 0 ? 'block' : 'none';
+                
+                // Re-render with search filter applied client-side
+                renderFrame();
+                updateContentHeight();
+            });
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('search-input');
+            const clearBtn = document.getElementById('search-clear');
+            
+            input.value = '';
+            clearBtn.style.display = 'none';
+            searchQuery = '';
+            isSearching = false;
+            
+            // Re-render without search filter
+            renderFrame();
+            updateContentHeight();
+        }
+
+        async function loadLogs() {
+            if (isLoading || !hasMoreLogs) return;
+            isLoading = true;
+
+            try {
+                let url;
+                const params = new URLSearchParams();
+                params.set('limit', PAGE_SIZE.toString());
+                params.set('offset', currentOffset.toString());
+                
+                // Don't filter server-side, we filter client-side for consistency with WebSocket
+                
+                if (isSearching && searchQuery) {
+                    params.set('q', searchQuery);
+                    url = `/api/logs/search?${params.toString()}`;
+                } else {
+                    url = `/api/logs?${params.toString()}`;
+                }
+
+                const response = await fetch(url);
+                const newLogs = await response.json();
+
+                if (newLogs.length < PAGE_SIZE) {
+                    hasMoreLogs = false;
+                }
+
+                // Normalize API response to match expected format
+                const normalizedLogs = newLogs.map(log => ({
+                    id: log.id,
+                    level: log.level,
+                    time: formatTime(log.timestamp),
+                    timestamp: log.timestamp,
+                    server: log.server_name,
+                    content: log.content
+                }));
+
+                // Add only unique logs (avoid duplicates from WebSocket)
+                const existingIds = new Set(logs.map(l => l.id));
+                const uniqueLogs = normalizedLogs.filter(log => !existingIds.has(log.id));
+
+                // Initialize server-level counts from loaded logs (only on first load)
+                if (currentOffset === 0) {
+                    serverLevelCounts = {};
+                    for (const log of uniqueLogs) {
+                        if (!serverLevelCounts[log.server]) {
+                            serverLevelCounts[log.server] = { error: 0, warning: 0, info: 0, debug: 0 };
+                        }
+                        serverLevelCounts[log.server][log.level]++;
+                    }
+                    updateAllCounters();
+                }
+
+                // Append to logs (newest first from API)
+                logs = logs.concat(uniqueLogs);
+                currentOffset += newLogs.length;
+
+                // Update display
+                updateContentHeight();
+
+            } catch (err) {
+                console.error('Failed to load logs:', err);
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        let initialCountsLoaded = false;
+
+        async function updateFilterCountsFromAPI() {
+            // Only load initial counts once from API
+            // After that, use session-level tracking from WebSocket logs
+            if (initialCountsLoaded) return;
+
+            try {
+                // Fetch all counts in parallel for speed
+                const [totalResp, errorResp, warningResp, infoResp, debugResp] = await Promise.all([
+                    fetch('/api/logs/count'),
+                    fetch('/api/logs/count?level=error'),
+                    fetch('/api/logs/count?level=warning'),
+                    fetch('/api/logs/count?level=info'),
+                    fetch('/api/logs/count?level=debug')
+                ]);
+
+                const [totalData, errorData, warningData, infoData, debugData] = await Promise.all([
+                    totalResp.json(),
+                    errorResp.json(),
+                    warningResp.json(),
+                    infoResp.json(),
+                    debugResp.json()
+                ]);
+
+                // Initialize session counts from API (session logs so far)
+                sessionCounts.error = errorData.count;
+                sessionCounts.warning = warningData.count;
+                sessionCounts.info = infoData.count;
+                sessionCounts.debug = debugData.count;
+                totalCount = totalData.count;
+                initialCountsLoaded = true;
+
+                updateAllCounters();
+            } catch (err) {
+                console.error('Failed to load counts:', err);
+            }
+        }
+
+        function updateTopStats() {
+            // Top stats show session totals (all servers, not filtered)
+            document.getElementById('total-lines').textContent = formatCount(totalCount);
+            document.getElementById('total-errors').textContent = formatCount(sessionCounts.error);
+            document.getElementById('total-warnings').textContent = formatCount(sessionCounts.warning);
+        }
+
+        function handleLevelFilterChange(e) {
+            const level = e.target.value;
+            if (e.target.checked) {
+                activeLevelFilters.add(level);
+            } else {
+                activeLevelFilters.delete(level);
+            }
+            
+            // Re-render with new filters (client-side filtering)
+            renderFrame();
+            updateContentHeight();
+        }
+
+        function handleServerFilterChange(e) {
+            const server = e.target.value;
+            if (e.target.checked) {
+                activeServerFilters.add(server);
+            } else {
+                activeServerFilters.delete(server);
+            }
+
+            // Update all counters
+            updateAllCounters();
+
+            // Re-render with new filters (client-side filtering)
+            renderFrame();
+            updateContentHeight();
+        }
+
+        function getFilteredLogs() {
+            // Filter logs based on current filters
+            // WebSocket logs need client-side filtering
+            // API logs are pre-filtered but we apply search here
+            return logs.filter(log => {
+                // Check level filter
+                if (!activeLevelFilters.has(log.level)) return false;
+
+                // Check server filter
+                if (activeServerFilters.size > 0 && !activeServerFilters.has(log.server)) return false;
+
+                // Check search filter
+                if (isSearching && searchQuery) {
+                    const content = (log.content || '').toLowerCase();
+                    const server = (log.server || '').toLowerCase();
+                    const query = searchQuery.toLowerCase();
+                    if (!content.includes(query) && !server.includes(query)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        let lastScrollTop = 0;
+        let isScrollingProgrammatically = false;
+
+        function handleScroll() {
+            const scrollTop = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            const clientHeight = container.clientHeight;
+            
+            // Show/hide Jump to top button based on scroll position
+            const jumpBtn = document.getElementById('btn-jump-top');
+            if (scrollTop > 100) {
+                jumpBtn.style.display = 'inline-block';
+            } else {
+                jumpBtn.style.display = 'none';
+            }
+            
+            // Detect user-initiated scroll (not programmatic)
+            if (!isScrollingProgrammatically) {
+                // User is scrolling - disable auto-scroll if enabled
+                if (autoScroll && scrollTop !== 0) {
+                    disableAutoScroll();
+                }
+            }
+            
+            lastScrollTop = scrollTop;
+            
+            // Debounce scroll end detection
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                userScrolling = false;
+                scrollTimeout = null;
+            }, 150);
+            
+            // Infinite scroll: Load more when near bottom
+            if (scrollTop + clientHeight > scrollHeight - LOG_HEIGHT * BUFFER_SIZE * 2) {
+                if (!isLoading && hasMoreLogs) {
+                    loadLogs().then(() => renderFrame());
+                }
+            }
+            
+            renderFrame();
+        }
+
+        function disableAutoScroll() {
+            autoScroll = false;
+            updateAutoScrollUI();
+        }
+
+        function enableAutoScroll() {
+            autoScroll = true;
+            updateAutoScrollUI();
+            scrollToTop();
+            // Reload to get latest
+            currentOffset = 0;
+            logs = [];
+            hasMoreLogs = true;
+            loadLogs().then(() => renderFrame());
+        }
+
+        function updateAutoScrollUI() {
+            const btn = document.getElementById('btn-autoscroll');
+            btn.classList.toggle('active', autoScroll);
+            const indicator = document.getElementById('paused-indicator');
+            indicator.classList.toggle('visible', !autoScroll);
+        }
+
+        function scrollToTop() {
+            isScrollingProgrammatically = true;
+            container.scrollTop = 0;
+            setTimeout(() => {
+                isScrollingProgrammatically = false;
+            }, 100);
+        }
 
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
             ws.onopen = () => {
-                console.log('WebSocket connected');
                 updateConnectionStatus(true);
             };
 
@@ -397,7 +926,6 @@
             };
 
             ws.onclose = () => {
-                console.log('WebSocket disconnected');
                 updateConnectionStatus(false);
                 setTimeout(connect, 3000);
             };
@@ -410,43 +938,84 @@
         function updateConnectionStatus(connected) {
             const statusEl = document.getElementById('ws-status');
             const indicatorEl = document.getElementById('status-indicator');
-            const connStatusEl = document.getElementById('connection-status');
-            const connIndicatorEl = document.getElementById('conn-indicator');
-            const connTextEl = document.getElementById('conn-text');
-
-            if (connected) {
-                statusEl.textContent = 'Connected';
-                indicatorEl.style.background = '#4ecca3';
-                connStatusEl.className = 'connection-status connected';
-                connIndicatorEl.style.background = '#4ecca3';
-                connTextEl.textContent = 'Connected';
-            } else {
-                statusEl.textContent = 'Reconnecting...';
-                indicatorEl.style.background = '#e94560';
-                connStatusEl.className = 'connection-status disconnected';
-                connIndicatorEl.style.background = '#e94560';
-                connTextEl.textContent = 'Disconnected';
-            }
+            statusEl.textContent = connected ? 'Connected' : 'Reconnecting...';
+            indicatorEl.style.background = connected ? '#238636' : '#da3633';
         }
 
         function handleMessage(data) {
             if (data.type === 'stats') {
                 updateStats(data.stats);
             } else {
-                addLogLine(data);
+                // Real-time log from WebSocket
+                handleRealtimeLog(data);
+            }
+        }
+
+        function handleRealtimeLog(data) {
+            const level = getLogLevel(data);
+            const serverName = data.server_name;
+
+            // Check if this log already exists (by timestamp+server+content)
+            const timestamp = new Date(data.timestamp).getTime();
+            const isDuplicate = logs.some(log => {
+                const logTime = new Date(log.time).getTime();
+                return Math.abs(logTime - timestamp) < 1000 &&
+                       log.server === serverName &&
+                       log.content === data.content;
+            });
+
+            if (isDuplicate) return;
+
+            // Add to logs array - filtering is done in render
+            const entry = {
+                id: Date.now(),
+                level: level,
+                time: formatTime(data.timestamp),
+                timestamp: data.timestamp, // Store original timestamp for filtering
+                server: serverName,
+                content: data.content
+            };
+
+            // Add to beginning
+            logs.unshift(entry);
+
+            // Track session-level counts (all servers)
+            sessionCounts[level] = (sessionCounts[level] || 0) + 1;
+
+            // Track per-server per-level counts
+            if (!serverLevelCounts[serverName]) {
+                serverLevelCounts[serverName] = { error: 0, warning: 0, info: 0, debug: 0 };
+            }
+            serverLevelCounts[serverName][level]++;
+            totalCount++;
+
+            // Update all counters simultaneously
+            updateAllCounters();
+
+            // Keep only rendered logs in memory, let scroll trigger load more
+            updateContentHeight();
+
+            linesInLastSecond++;
+
+            if (autoScroll) {
+                // Scroll first, then render so visible range is calculated correctly
+                scrollToTop();
+                renderFrame();
+            }
+
+            // Update rate
+            const now = Date.now();
+            if (now - lastLinesTime >= 1000) {
+                document.getElementById('lines-per-sec').textContent = linesInLastSecond.toFixed(1);
+                linesInLastSecond = 0;
+                lastLinesTime = now;
             }
         }
 
         function updateStats(stats) {
-            document.getElementById('total-lines').textContent = stats.total_lines.toLocaleString();
-            document.getElementById('total-errors').textContent = stats.total_errors.toLocaleString();
-            document.getElementById('total-warnings').textContent = stats.total_warnings.toLocaleString();
-            document.getElementById('lines-per-sec').textContent = stats.lines_per_second.toFixed(1);
-
+            // Update server cards from WebSocket stats (contains real-time connection status and counts)
             if (stats.servers) {
-                stats.servers.forEach(server => {
-                    updateServerCard(server);
-                });
+                stats.servers.forEach(server => updateServerCard(server));
             }
         }
 
@@ -460,58 +1029,118 @@
             const warningsEl = document.getElementById(`warnings-${server.name}`);
 
             if (statusEl) {
-                statusEl.textContent = server.connected ? 'Connected' : 'Disconnected';
+                statusEl.textContent = server.connected ? 'ON' : 'OFF';
                 statusEl.className = `server-status ${server.connected ? '' : 'disconnected'}`;
             }
 
-            if (linesEl) linesEl.textContent = (server.line_count || 0).toLocaleString();
-            if (errorsEl) errorsEl.textContent = (server.error_count || 0).toLocaleString();
-            if (warningsEl) warningsEl.textContent = (server.warn_count || 0).toLocaleString();
+            if (linesEl) linesEl.textContent = formatCount(server.line_count || 0);
+            if (errorsEl) errorsEl.textContent = formatCount(server.error_count || 0);
+            if (warningsEl) warningsEl.textContent = formatCount(server.warn_count || 0);
 
-            card.className = 'server-card';
+            card.className = 'server-item';
             if (server.connected) card.classList.add('connected');
             if (server.error_count > 0) card.classList.add('has-errors');
             else if (server.warn_count > 0) card.classList.add('has-warnings');
         }
 
-        function addLogLine(data) {
-            const container = document.getElementById('logs-container');
+        function getLogLevel(data) {
+            if (data.is_error) return 'error';
+            if (data.is_warning) return 'warning';
+            const content = (data.content || '').toLowerCase();
+            if (content.includes('info') || content.includes('success')) return 'info';
+            return 'debug';
+        }
+
+        function formatTime(ts) {
+            const d = new Date(ts);
+            return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function updateContentHeight() {
+            // Height is now managed in renderFrame
+            renderFrame();
+        }
+
+        function renderFrame() {
+            if (!container || !contentSpacer) return;
             
-            if (logCount === 0) {
-                container.innerHTML = '';
+            const filteredLogs = getFilteredLogs();
+            const scrollTop = container.scrollTop;
+            const viewportHeight = container.clientHeight;
+            
+            // Update height for virtual scrolling
+            const totalHeight = filteredLogs.length * LOG_HEIGHT;
+            contentSpacer.style.height = totalHeight + 'px';
+            
+            const startIdx = Math.max(0, Math.floor(scrollTop / LOG_HEIGHT) - BUFFER_SIZE);
+            const endIdx = Math.min(filteredLogs.length, Math.ceil((scrollTop + viewportHeight) / LOG_HEIGHT) + BUFFER_SIZE);
+            
+            let html = '';
+            for (let i = startIdx; i < endIdx; i++) {
+                const log = filteredLogs[i];
+                if (!log) continue;
+                
+                const top = i * LOG_HEIGHT;
+                html += `
+                    <div class="log-line ${log.level}" style="position: absolute; top: ${top}px; left: 0; right: 0; height: ${LOG_HEIGHT}px;">
+                        <span class="log-time">${escapeHtml(log.time)}</span>
+                        <span class="log-server" title="${escapeHtml(log.server)}">${escapeHtml(log.server)}</span>
+                        <span class="log-content">${escapeHtml(log.content)}</span>
+                    </div>
+                `;
             }
+            
+            contentSpacer.innerHTML = html;
+        }
 
-            const line = document.createElement('div');
-            line.className = 'log-line';
-            if (data.is_error) line.classList.add('error');
-            else if (data.is_warning) line.classList.add('warning');
-
-            const timestamp = new Date(data.timestamp).toLocaleTimeString();
-            line.innerHTML = `
-                <span class="log-timestamp">${timestamp}</span>
-                <span class="log-server">[${escapeHtml(data.server_name)}]</span>
-                <span class="log-content">${escapeHtml(data.content)}</span>
-            `;
-
-            container.appendChild(line);
-            logCount++;
-            linesInLastSecond++;
-
-            while (container.children.length > maxLogs) {
-                container.removeChild(container.firstChild);
+        function formatCount(num) {
+            if (num >= 1000000000) {
+                return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B';
             }
-
-            if (autoScroll) {
-                container.scrollTop = container.scrollHeight;
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
             }
-
-            // Update lines per second
-            const now = Date.now();
-            if (now - lastLinesTime >= 1000) {
-                document.getElementById('lines-per-sec').textContent = linesInLastSecond.toFixed(1);
-                linesInLastSecond = 0;
-                lastLinesTime = now;
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
             }
+            return num.toString();
+        }
+
+        function updateFilterCounts() {
+            // Calculate level counts from only active servers
+            // If no servers are selected, use session totals (all servers)
+            if (activeServerFilters.size === 0) {
+                filterCounts = { ...sessionCounts };
+            } else {
+                const levelCounts = { error: 0, warning: 0, info: 0, debug: 0 };
+
+                for (const server of activeServerFilters) {
+                    const counts = serverLevelCounts[server];
+                    if (counts) {
+                        levelCounts.error += counts.error || 0;
+                        levelCounts.warning += counts.warning || 0;
+                        levelCounts.info += counts.info || 0;
+                        levelCounts.debug += counts.debug || 0;
+                    }
+                }
+
+                filterCounts = levelCounts;
+            }
+        }
+
+        // Unified function to update all counters across the UI
+        function updateAllCounters() {
+            // Update level filter counts (filtered by active servers)
+            updateFilterCounts();
+
+            // Update level filter count displays
+            document.getElementById('count-error').textContent = formatCount(filterCounts.error);
+            document.getElementById('count-warning').textContent = formatCount(filterCounts.warning);
+            document.getElementById('count-info').textContent = formatCount(filterCounts.info);
+            document.getElementById('count-debug').textContent = formatCount(filterCounts.debug);
+
+            // Update top stats (session totals, all servers)
+            updateTopStats();
         }
 
         function escapeHtml(text) {
@@ -520,17 +1149,16 @@
             return div.innerHTML;
         }
 
-        function clearLogs() {
-            const container = document.getElementById('logs-container');
-            container.innerHTML = '<div class="empty-state">Logs cleared. Waiting for new logs...</div>';
-            logCount = 0;
-        }
-
         function toggleAutoScroll() {
-            autoScroll = !autoScroll;
+            if (autoScroll) {
+                disableAutoScroll();
+            } else {
+                enableAutoScroll();
+            }
         }
 
-        connect();
+        // Start
+        init();
     </script>
 </body>
 </html>

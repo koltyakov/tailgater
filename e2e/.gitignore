@@ -3,6 +3,8 @@ ssh_keys/
 
 # Temporary build files (copied to build context)
 tmp/
+tailgater.db*
+.tailgater.lock
 
 # Built binaries
 docker/loggen

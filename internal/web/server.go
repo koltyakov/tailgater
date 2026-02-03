@@ -8,14 +8,16 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"tailgater/internal/config"
 	"tailgater/internal/ssh"
 	"tailgater/internal/tailer"
+
+	"github.com/gorilla/websocket"
 )
 
 //go:embed static/* templates/*
@@ -32,6 +34,7 @@ type Server struct {
 	mu        sync.RWMutex
 	server    *http.Server
 	stats     ServerStats
+	logStore  *LogStore
 }
 
 // LogMessage represents a log message sent to clients
@@ -63,7 +66,7 @@ type ServerStatus struct {
 }
 
 // NewServer creates a new web server
-func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager) *Server {
+func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager, store *LogStore) (*Server, error) {
 	s := &Server{
 		config:    cfg,
 		tailer:    t,
@@ -78,6 +81,7 @@ func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager) *Serv
 		stats: ServerStats{
 			Servers: make([]ServerStatus, 0),
 		},
+		logStore: store,
 	}
 
 	// Initialize server status
@@ -88,7 +92,7 @@ func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager) *Serv
 		})
 	}
 
-	return s
+	return s, nil
 }
 
 // Start starts the web server
@@ -101,6 +105,9 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/servers", s.handleServers)
 	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/logs", s.handleLogs)
+	mux.HandleFunc("/api/logs/search", s.handleLogSearch)
+	mux.HandleFunc("/api/logs/count", s.handleLogCount)
 	mux.Handle("/static/", http.FileServer(http.FS(content)))
 
 	s.server = &http.Server{
@@ -116,6 +123,9 @@ func (s *Server) Start() error {
 
 	// Start log consumer
 	go s.consumeLogs()
+
+	// Start log pruning (keep last 24 hours)
+	go s.logPruner()
 
 	log.Printf("Web dashboard starting on http://%s:%d", webCfg.Host, webCfg.Port)
 	return s.server.ListenAndServe()
@@ -220,6 +230,136 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleLogs returns paginated logs
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse query parameters
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Parse filters
+	serversParam := r.URL.Query().Get("servers")
+	levelsParam := r.URL.Query().Get("levels")
+
+	var servers, levels []string
+	if serversParam != "" {
+		servers = strings.Split(serversParam, ",")
+	}
+	if levelsParam != "" {
+		levels = strings.Split(levelsParam, ",")
+	}
+
+	var entries []LogEntry
+	var err error
+
+	// Use filtered query if filters are provided
+	if len(servers) > 0 || len(levels) > 0 {
+		entries, err = s.logStore.GetWithFilters(servers, levels, limit, offset)
+	} else {
+		entries, err = s.logStore.GetRecent(limit, offset)
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+// handleLogSearch searches logs
+func (s *Server) handleLogSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "Query parameter 'q' required", http.StatusBadRequest)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Parse filters
+	serversParam := r.URL.Query().Get("servers")
+	levelsParam := r.URL.Query().Get("levels")
+
+	var servers, levels []string
+	if serversParam != "" {
+		servers = strings.Split(serversParam, ",")
+	}
+	if levelsParam != "" {
+		levels = strings.Split(levelsParam, ",")
+	}
+
+	var entries []LogEntry
+	var err error
+
+	// Use filtered search if filters are provided
+	if len(servers) > 0 || len(levels) > 0 {
+		entries, err = s.logStore.SearchWithFilters(query, servers, levels, limit, offset)
+	} else {
+		entries, err = s.logStore.Search(query, limit, offset)
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to search logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+// handleLogCount returns total log counts
+func (s *Server) handleLogCount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	level := r.URL.Query().Get("level")
+
+	var count int64
+	var err error
+
+	if level != "" && level != "all" {
+		count, err = s.logStore.GetCountByLevel(level)
+	} else {
+		count, err = s.logStore.GetCount()
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get count: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"count": count})
+}
+
 func (s *Server) broadcaster() {
 	for msg := range s.broadcast {
 		s.mu.RLock()
@@ -259,6 +399,23 @@ func (s *Server) consumeLogs() {
 		case s.broadcast <- msg:
 		default:
 			// Channel full, drop message
+		}
+	}
+}
+
+func (s *Server) logPruner() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if s.logStore != nil {
+				// Prune logs older than 24 hours
+				if err := s.logStore.PruneOld(24 * time.Hour); err != nil {
+					log.Printf("Failed to prune logs: %v", err)
+				}
+			}
 		}
 	}
 }

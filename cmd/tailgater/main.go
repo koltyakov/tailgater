@@ -21,10 +21,15 @@ import (
 	"tailgater/internal/web"
 )
 
+// LogConsumer consumes logs from tailer and stores them
+type LogConsumer struct {
+	store *web.LogStore
+}
+
 var (
 	configPath = flag.String("config", "tailgater.yaml", "Path to configuration file")
 	webMode    = flag.Bool("web", false, "Run in web dashboard mode")
-	cliMode    = flag.Bool("cli", true, "Run in CLI mode (default)")
+	cliMode    = flag.Bool("cli", false, "Run in CLI mode")
 	version    = flag.Bool("version", false, "Show version")
 )
 
@@ -103,6 +108,28 @@ func main() {
 		log.Printf("Warning: some connections failed: %v", err)
 	}
 
+	// Create instance lock to prevent multiple instances
+	instanceLock, err := web.NewInstanceLock(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to acquire instance lock: %v", err)
+	}
+	defer instanceLock.Unlock()
+
+	// Create log store at tailgater.db next to config file
+	configDir := filepath.Dir(*configPath)
+	if configDir == "." {
+		configDir = ""
+	}
+	dbPath := filepath.Join(configDir, "tailgater.db")
+
+	// Remove old DB if exists (clean start)
+	os.Remove(dbPath)
+
+	logStore, err := web.NewLogStoreAtPath(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to create log store: %v", err)
+	}
+
 	// Create tailer
 	tail, err := tailer.New(cfg, manager)
 	if err != nil {
@@ -114,6 +141,9 @@ func main() {
 		log.Fatalf("Failed to start tailer: %v", err)
 	}
 
+	// Start log consumer to store all logs
+	go consumeLogs(tail, logStore)
+
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -121,9 +151,31 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Determine mode
-	runWeb := *webMode || cfg.Web.Enabled
-	runCLI := *cliMode && !*webMode
+	// Determine mode:
+	// - -web only: web only, no stdout
+	// - -cli only: CLI only, no web  
+	// - both -web and -cli: both
+	// - neither: CLI only (backward compatible default)
+	var runWeb, runCLI bool
+	
+	switch {
+	case *webMode && *cliMode:
+		// Both flags explicitly set
+		runWeb = true
+		runCLI = true
+	case *webMode:
+		// Only -web flag
+		runWeb = true
+		runCLI = false
+	case *cliMode:
+		// Only -cli flag
+		runWeb = false
+		runCLI = true
+	default:
+		// Neither flag set - default to CLI only for backward compatibility
+		runWeb = false
+		runCLI = true
+	}
 
 	var wg sync.WaitGroup
 
@@ -139,7 +191,11 @@ func main() {
 	// Start Web mode
 	var webServer *web.Server
 	if runWeb {
-		webServer = web.NewServer(cfg, tail, manager)
+		var err error
+		webServer, err = web.NewServer(cfg, tail, manager, logStore)
+		if err != nil {
+			log.Fatalf("Failed to create web server: %v", err)
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -148,7 +204,7 @@ func main() {
 			}
 		}()
 
-		if !runCLI {
+		if runWeb && !runCLI {
 			log.Printf("Web dashboard available at http://%s:%d", cfg.Web.Host, cfg.Web.Port)
 		}
 	}
@@ -172,7 +228,32 @@ func main() {
 	manager.DisconnectAll()
 	wg.Wait()
 
+	// Close log store and delete DB file
+	if logStore != nil {
+		logStore.Close()
+		os.Remove(dbPath)
+	}
+
 	log.Println("Shutdown complete")
+}
+
+func consumeLogs(tail *tailer.Tailer, store *web.LogStore) {
+	output := tail.Output()
+	for line := range output {
+		level := "debug"
+		if line.IsError {
+			level = "error"
+		} else if line.IsWarning {
+			level = "warning"
+		} else if strings.Contains(strings.ToLower(line.Content), "info") {
+			level = "info"
+		}
+
+		_, err := store.Insert(line.ServerName, line.Content, line.Timestamp, level)
+		if err != nil {
+			log.Printf("Failed to store log: %v", err)
+		}
+	}
 }
 
 func runCLIMode(tail *tailer.Tailer, cfg *config.Config, ctx context.Context) {

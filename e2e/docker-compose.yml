@@ -1,3 +1,5 @@
+name: tailgater_e2e
+
 services:
   server-1:
     build:

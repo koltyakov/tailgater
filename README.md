@@ -2,6 +2,8 @@
 
 Tail logs from multiple servers at once. Simple as that.
 
+![tailgater demo](./assets/demo.jpg)
+
 I built this because I was tired of opening a dozen SSH sessions just to watch logs across a cluster. Now I run one command and see everything in one place.
 
 ## What it does
