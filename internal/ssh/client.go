@@ -252,7 +252,7 @@ func (c *Client) readStream(ctx context.Context, reader io.Reader, output chan<-
 				case <-ctx.Done():
 				}
 			}
-			
+
 			// Connection lost, trigger reconnect
 			select {
 			case c.reconnectC <- struct{}{}:
@@ -313,7 +313,7 @@ func (m *Manager) GetClient(name string) (*Client, bool) {
 func (m *Manager) GetAllClients() []*Client {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	clients := make([]*Client, 0, len(m.clients))
 	for _, c := range m.clients {
 		clients = append(clients, c)
@@ -359,7 +359,7 @@ func (m *Manager) DisconnectAll() error {
 
 // IsHostAvailable checks if a host is reachable
 func IsHostAvailable(host string, port int, timeout time.Duration) bool {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return false

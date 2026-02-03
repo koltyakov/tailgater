@@ -147,7 +147,7 @@ func main() {
 				log.Printf("Web server error: %v", err)
 			}
 		}()
-		
+
 		if !runCLI {
 			log.Printf("Web dashboard available at http://%s:%d", cfg.Web.Host, cfg.Web.Port)
 		}
@@ -162,7 +162,7 @@ func main() {
 
 	// Cleanup
 	tail.Stop()
-	
+
 	if webServer != nil {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
@@ -215,7 +215,7 @@ func runCLIMode(tail *tailer.Tailer, cfg *config.Config, ctx context.Context) {
 	}
 
 	output := tail.Output()
-	
+
 	for {
 		select {
 		case line, ok := <-output:

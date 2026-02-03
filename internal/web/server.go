@@ -23,15 +23,15 @@ var content embed.FS
 
 // Server represents the web dashboard server
 type Server struct {
-	config     *config.Config
-	tailer     *tailer.Tailer
-	manager    *ssh.Manager
-	upgrader   websocket.Upgrader
-	clients    map[*websocket.Conn]bool
-	broadcast  chan LogMessage
-	mu         sync.RWMutex
-	server     *http.Server
-	stats      ServerStats
+	config    *config.Config
+	tailer    *tailer.Tailer
+	manager   *ssh.Manager
+	upgrader  websocket.Upgrader
+	clients   map[*websocket.Conn]bool
+	broadcast chan LogMessage
+	mu        sync.RWMutex
+	server    *http.Server
+	stats     ServerStats
 }
 
 // LogMessage represents a log message sent to clients
@@ -45,11 +45,11 @@ type LogMessage struct {
 
 // ServerStats represents statistics for the dashboard
 type ServerStats struct {
-	Servers        []ServerStatus   `json:"servers"`
-	TotalLines     int64            `json:"total_lines"`
-	TotalErrors    int64            `json:"total_errors"`
-	TotalWarnings  int64            `json:"total_warnings"`
-	LinesPerSecond float64          `json:"lines_per_second"`
+	Servers        []ServerStatus `json:"servers"`
+	TotalLines     int64          `json:"total_lines"`
+	TotalErrors    int64          `json:"total_errors"`
+	TotalWarnings  int64          `json:"total_warnings"`
+	LinesPerSecond float64        `json:"lines_per_second"`
 	mu             sync.RWMutex
 }
 
@@ -174,7 +174,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	s.stats.mu.RLock()
-	stats := s.stats
+	stats := struct {
+		Servers        []ServerStatus `json:"servers"`
+		TotalLines     int64          `json:"total_lines"`
+		TotalErrors    int64          `json:"total_errors"`
+		TotalWarnings  int64          `json:"total_warnings"`
+		LinesPerSecond float64        `json:"lines_per_second"`
+	}{
+		Servers:        s.stats.Servers,
+		TotalLines:     s.stats.TotalLines,
+		TotalErrors:    s.stats.TotalErrors,
+		TotalWarnings:  s.stats.TotalWarnings,
+		LinesPerSecond: s.stats.LinesPerSecond,
+	}
 	s.stats.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -281,10 +293,20 @@ func (s *Server) updateStats(msg LogMessage) {
 
 	if !found {
 		s.stats.Servers = append(s.stats.Servers, ServerStatus{
-			Name:       msg.ServerName,
-			LineCount:  1,
-			ErrorCount: func() int64 { if msg.IsError { return 1 }; return 0 }(),
-			WarnCount:  func() int64 { if msg.IsWarning { return 1 }; return 0 }(),
+			Name:      msg.ServerName,
+			LineCount: 1,
+			ErrorCount: func() int64 {
+				if msg.IsError {
+					return 1
+				}
+				return 0
+			}(),
+			WarnCount: func() int64 {
+				if msg.IsWarning {
+					return 1
+				}
+				return 0
+			}(),
 		})
 	}
 }
@@ -322,12 +344,24 @@ func (s *Server) statsUpdater() {
 
 func (s *Server) sendStats(conn *websocket.Conn) {
 	s.stats.mu.RLock()
-	stats := s.stats
+	stats := struct {
+		Servers        []ServerStatus `json:"servers"`
+		TotalLines     int64          `json:"total_lines"`
+		TotalErrors    int64          `json:"total_errors"`
+		TotalWarnings  int64          `json:"total_warnings"`
+		LinesPerSecond float64        `json:"lines_per_second"`
+	}{
+		Servers:        s.stats.Servers,
+		TotalLines:     s.stats.TotalLines,
+		TotalErrors:    s.stats.TotalErrors,
+		TotalWarnings:  s.stats.TotalWarnings,
+		LinesPerSecond: s.stats.LinesPerSecond,
+	}
 	s.stats.mu.RUnlock()
 
 	msg := struct {
-		Type   string       `json:"type"`
-		Stats  ServerStats  `json:"stats"`
+		Type  string `json:"type"`
+		Stats any    `json:"stats"`
 	}{
 		Type:  "stats",
 		Stats: stats,

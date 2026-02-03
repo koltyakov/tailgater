@@ -33,9 +33,9 @@ type HighlightRule struct {
 
 // Stats represents tailer statistics
 type Stats struct {
-	TotalLines    int64            `json:"total_lines"`
-	ServerLines   map[string]int64 `json:"server_lines"`
-	ServerErrors  map[string]int64 `json:"server_errors"`
+	TotalLines     int64            `json:"total_lines"`
+	ServerLines    map[string]int64 `json:"server_lines"`
+	ServerErrors   map[string]int64 `json:"server_errors"`
 	ServerWarnings map[string]int64 `json:"server_warnings"`
 }
 
@@ -124,9 +124,10 @@ func (t *Tailer) handleOutput(client *ssh.Client) {
 			// Apply highlighting rules
 			for _, rule := range t.highlights {
 				if rule.Regex.MatchString(line.Content) {
-					if rule.Name == "error" || rule.Name == "fatal" {
+					switch rule.Name {
+					case "error", "fatal":
 						line.IsError = true
-					} else if rule.Name == "warning" || rule.Name == "warn" {
+					case "warning", "warn":
 						line.IsWarning = true
 					}
 					break

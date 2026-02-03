@@ -1,115 +1,95 @@
 # Tailgater
 
-A multi-SSH log tailing application with real-time streaming and a web dashboard. Monitor logs from multiple servers simultaneously in your terminal or through a modern web interface.
+Tail logs from multiple servers at once. Simple as that.
 
-## Features
+I built this because I was tired of opening a dozen SSH sessions just to watch logs across a cluster. Now I run one command and see everything in one place.
 
-- 🔌 **Multi-SSH Connections**: Connect to multiple servers simultaneously via SSH
-- 📜 **Real-time Log Tailing**: Stream logs from multiple files across all servers
-- 🎨 **Syntax Highlighting**: Configurable regex-based highlighting for errors, warnings, and more
-- 🖥️ **CLI Mode**: View all logs in a unified terminal output with colored server prefixes
-- 🌐 **Web Dashboard**: Modern web interface with real-time log streaming and statistics
-- 🔄 **Auto-reconnection**: Automatically reconnects on connection loss
-- ⚙️ **Hot-reload Configuration**: Configuration changes are applied without restart
+## What it does
 
-## Installation
+- SSH into multiple servers simultaneously
+- Stream logs in real-time
+- Highlight errors/warnings with colors you configure
+- Web dashboard if you prefer a browser over terminal
+- Reconnects automatically when connections drop
+- Reload config without restarting
+
+## Install
 
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/tailgater.git
 cd tailgater
-
-# Build the application
 go build -o tailgater ./cmd/tailgater
-
-# Or install directly
-go install ./cmd/tailgater
 ```
+
+Or just `go install ./cmd/tailgater` if you want it in your $GOPATH.
 
 ## Quick Start
 
-1. Create a configuration file:
+Copy the example config:
 
 ```bash
 cp tailgater.yaml.example tailgater.yaml
 ```
 
-2. Edit `tailgater.yaml` with your server details:
+Edit it with your servers:
 
 ```yaml
 servers:
-  - name: web-server-1
+  - name: web-1
     host: 192.168.1.10
-    port: 22
     user: admin
     private_key: ~/.ssh/id_rsa
-    known_hosts: ~/.ssh/known_hosts
 
 tail:
   files:
     - /var/log/syslog
-    - /var/log/nginx/access.log
   options: "-f -n 100"
 ```
 
-3. Run in CLI mode:
+Run it:
 
 ```bash
-./tailgater
+./tailgater           # CLI mode
+./tailgater -web      # Web dashboard on :8080
 ```
 
-4. Or run in web mode:
+## Config
 
-```bash
-./tailgater -web
+**Servers** - each needs a name, host, user, and auth (key or password):
+
+```yaml
+servers:
+  - name: prod-web-1
+    host: 10.0.0.5
+    user: deploy
+    private_key: ~/.ssh/id_rsa_prod
+    known_hosts: ~/.ssh/known_hosts
 ```
 
-## Configuration
-
-The configuration file supports the following options:
-
-### Servers
-
-Each server needs:
-- `name`: Unique identifier for the server
-- `host`: IP address or hostname
-- `port`: SSH port (default: 22)
-- `user`: SSH username
-- `private_key`: Path to SSH private key
-- `password`: SSH password (alternative to key)
-- `known_hosts`: Path to known_hosts file
-- `insecure_skip_verify`: Skip host key verification (not recommended)
-
-### Tail Configuration
+**Tail options** - standard tail flags:
 
 ```yaml
 tail:
   files:
-    - /var/log/syslog
-    - /var/log/auth.log
-  options: "-f -n 0"  # -f for follow, -n 0 for no initial lines
+    - /var/log/app.log
+    - /var/log/nginx/error.log
+  options: "-f -n 0"  # follow, start from now
 ```
 
-### Highlight Rules
-
-Configure regex patterns with colors:
+**Colors** - regex patterns with colors:
 
 ```yaml
 highlights:
-  - name: error
-    pattern: '(?i)\b(error|fatal|critical)\b'
+  - pattern: '(?i)\b(error|fatal)\b'
     color: red
     bold: true
-
-  - name: warning
-    pattern: '(?i)\b(warn|warning)\b'
+  - pattern: '(?i)\bwarn\b'
     color: yellow
-    bold: true
 ```
 
 Available colors: `red`, `yellow`, `green`, `cyan`, `blue`, `magenta`, `white`
 
-### Web Dashboard
+**Web dashboard**:
 
 ```yaml
 web:
@@ -118,63 +98,38 @@ web:
   port: 8080
 ```
 
-## Usage
+## CLI Mode
 
-### CLI Mode (Default)
+Default mode - logs stream to your terminal with server prefixes:
 
-```bash
-# Run with default config file (tailgater.yaml or ~/.tailgater.yaml)
-./tailgater
-
-# Specify config file
-./tailgater -config /path/to/config.yaml
-
-# Force CLI mode
-./tailgater -cli
+```
+[web-1] Jan 15 10:30:45 INFO Request completed
+[db-1]  Jan 15 10:30:46 ERROR Connection failed
+[web-1] Jan 15 10:30:47 WARN High memory usage
 ```
 
-Output format:
-```
-[web-server-1] Jan 15 10:30:45 server app[1234]: INFO Request completed
-[db-server-1] Jan 15 10:30:46 db postgres[5678]: ERROR Connection failed
-[web-server-1] Jan 15 10:30:47 server app[1234]: WARN High memory usage
-```
+Flags:
+- `-config` - config file path (default: `tailgater.yaml`)
+- `-cli` - force CLI mode
+- `-web` - run web dashboard
+- `-version` - show version
 
-### Web Mode
+## Web Mode
 
-```bash
-# Run web dashboard
-./tailgater -web
-
-# Run both CLI and web
-./tailgater -web -cli
-```
-
-Access the dashboard at `http://localhost:8080`
-
-Features:
-- Real-time log streaming via WebSocket
-- Per-server statistics (lines, errors, warnings)
-- Visual indicators for server connection status
+Open `http://localhost:8080` for a dashboard with:
+- Live log streaming (WebSocket)
+- Per-server stats
+- Connection status indicators
 - Error/warning highlighting
-- Auto-scroll with manual clear option
+- Pause scroll / clear controls
 
-## Command Line Flags
+## Security
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-config` | Path to configuration file | `tailgater.yaml` |
-| `-web` | Run in web dashboard mode | `false` |
-| `-cli` | Run in CLI mode | `true` |
-| `-version` | Show version information | - |
-
-## Security Considerations
-
-- Always use SSH key authentication when possible
-- Set proper file permissions on your config file: `chmod 600 tailgater.yaml`
-- Use `known_hosts` file for host key verification
-- Keep your private keys secure and never commit them
+- Use SSH keys, not passwords
+- `chmod 600` your config file (it has server credentials)
+- Use `known_hosts` to verify host keys
+- Don't commit keys or configs with secrets
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT

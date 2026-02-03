@@ -1,4 +1,4 @@
-.PHONY: build clean run test install
+.PHONY: build clean run test install fmt lint
 
 BINARY_NAME=tailgater
 MAIN_PATH=./cmd/tailgater
@@ -26,6 +26,12 @@ install: build
 deps:
 	go mod download
 	go mod tidy
+
+fmt:
+	go fmt ./...
+
+lint:
+	go vet ./...
 
 # Cross-compilation
 build-linux:
