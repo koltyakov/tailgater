@@ -588,14 +588,21 @@
         const SEARCH_DEBOUNCE_MS = 250;
         const LEVEL_VALUES = ['error', 'warning', 'info', 'debug'];
         const NONE_SELECTED_TOKEN = '__none__';
+        const DEFAULT_EMPTY_MESSAGE = 'Waiting for logs...';
+        const NO_SERVERS_SELECTED_MESSAGE = 'No servers selected.';
+        const NO_MATCHING_LOGS_MESSAGE = 'No logs match current filters.';
         
         let ws;
+        let shouldReconnect = true;
         let autoScroll = true;
         let searchQuery = '';
         let searchDebounceTimer = null;
+        let linesPerSecondTimer = null;
         
         // Data storage
         let logs = [];
+        let logSignatures = new Set();
+        let logIDs = new Set();
         let totalCount = 0;
         let hasMoreLogs = true;
         let isLoading = false;
@@ -643,6 +650,8 @@
                 updateFilterCountsFromAPI()
             ]);
 
+            startLinesPerSecondTicker();
+            window.addEventListener('beforeunload', cleanupClientResources);
             connect();
             renderFrame();
         }
@@ -675,6 +684,32 @@
             }, SEARCH_DEBOUNCE_MS);
         }
 
+        function cleanupClientResources() {
+            shouldReconnect = false;
+            clearTimeout(searchDebounceTimer);
+            if (linesPerSecondTimer) {
+                clearInterval(linesPerSecondTimer);
+                linesPerSecondTimer = null;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+        }
+
+        function startLinesPerSecondTicker() {
+            if (linesPerSecondTimer) {
+                clearInterval(linesPerSecondTimer);
+            }
+            linesPerSecondTimer = setInterval(() => {
+                const now = Date.now();
+                if (now-lastLinesTime >= 1000) {
+                    document.getElementById('lines-per-sec').textContent = linesInLastSecond.toFixed(1);
+                    linesInLastSecond = 0;
+                    lastLinesTime = now;
+                }
+            }, 1000);
+        }
+
         function buildLogQueryParams() {
             const params = new URLSearchParams();
             params.set('limit', PAGE_SIZE.toString());
@@ -703,29 +738,34 @@
             return params;
         }
 
+        function buildLogsURL(includeCursor) {
+            const params = buildLogQueryParams();
+            if (!includeCursor) {
+                params.delete('before_id');
+                params.delete('before_ts');
+            }
+            const endpoint = searchQuery ? '/api/logs/search' : '/api/logs';
+            return `${endpoint}?${params.toString()}`;
+        }
+
+        async function fetchLogPage(includeCursor) {
+            const response = await fetch(buildLogsURL(includeCursor));
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
         async function loadInitialLogsFromAPI() {
             const epoch = requestEpoch;
             isLoading = true;
 
             try {
-                const params = buildLogQueryParams();
-                params.delete('before_id');
-                params.delete('before_ts');
-
-                const isSearch = Boolean(searchQuery);
-                const url = isSearch
-                    ? `/api/logs/search?${params.toString()}`
-                    : `/api/logs?${params.toString()}`;
-
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
-                const page = await response.json();
+                const page = await fetchLogPage(false);
                 if (epoch !== requestEpoch) return;
 
                 logs = normalizeApiLogs(page);
+                rebuildLogIndexes();
                 hasMoreLogs = page.length === PAGE_SIZE;
                 oldestCursor = page.length > 0
                     ? { id: page[page.length - 1].id, timestamp: page[page.length - 1].timestamp }
@@ -755,34 +795,12 @@
             isLoading = true;
 
             try {
-                const params = buildLogQueryParams();
-                const isSearch = Boolean(searchQuery);
-                const url = isSearch
-                    ? `/api/logs/search?${params.toString()}`
-                    : `/api/logs?${params.toString()}`;
-
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
-                const newLogs = await response.json();
+                const newLogs = await fetchLogPage(true);
                 if (epoch !== requestEpoch) return;
 
                 hasMoreLogs = newLogs.length === PAGE_SIZE;
 
-                const uniqueLogs = appendUniqueLogs(newLogs);
-
-                if (!oldestCursor && uniqueLogs.length > 0) {
-                    serverLevelCounts = {};
-                    for (const log of uniqueLogs) {
-                        if (!serverLevelCounts[log.server]) {
-                            serverLevelCounts[log.server] = { error: 0, warning: 0, info: 0, debug: 0 };
-                        }
-                        serverLevelCounts[log.server][log.level]++;
-                    }
-                    updateAllCounters();
-                }
+                appendUniqueLogs(newLogs);
 
                 if (newLogs.length > 0) {
                     const oldest = newLogs[newLogs.length - 1];
@@ -804,21 +822,7 @@
             const epoch = requestEpoch;
 
             try {
-                const params = buildLogQueryParams();
-                params.delete('before_id');
-                params.delete('before_ts');
-
-                const isSearch = Boolean(searchQuery);
-                const url = isSearch
-                    ? `/api/logs/search?${params.toString()}`
-                    : `/api/logs?${params.toString()}`;
-
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
-                const latestLogs = await response.json();
+                const latestLogs = await fetchLogPage(false);
                 if (epoch !== requestEpoch || latestLogs.length === 0) return;
 
                 const uniqueLogs = prependUniqueLogs(latestLogs);
@@ -838,6 +842,7 @@
         async function resetLogsAndReload() {
             requestEpoch += 1;
             logs = [];
+            resetLogIndexes();
             hasMoreLogs = true;
             isLoading = false;
             oldestCursor = null;
@@ -865,6 +870,10 @@
                     fetch('/api/logs/count?level=info'),
                     fetch('/api/logs/count?level=debug')
                 ]);
+
+                if (!totalResp.ok || !errorResp.ok || !warningResp.ok || !infoResp.ok || !debugResp.ok) {
+                    throw new Error('Failed to fetch one or more counters');
+                }
 
                 const [totalData, errorData, warningData, infoData, debugData] = await Promise.all([
                     totalResp.json(),
@@ -996,7 +1005,9 @@
 
             ws.onclose = () => {
                 updateConnectionStatus(false);
-                setTimeout(connect, 3000);
+                if (shouldReconnect) {
+                    setTimeout(connect, 3000);
+                }
             };
 
             ws.onerror = (error) => {
@@ -1039,14 +1050,6 @@
 
             linesInLastSecond++;
 
-            // Update rate
-            const now = Date.now();
-            if (now - lastLinesTime >= 1000) {
-                document.getElementById('lines-per-sec').textContent = linesInLastSecond.toFixed(1);
-                linesInLastSecond = 0;
-                lastLinesTime = now;
-            }
-
             if (!autoScroll) {
                 return;
             }
@@ -1065,10 +1068,10 @@
                 return;
             }
 
-            const isDuplicate = logs.some(log => log.signature === entry.signature);
-            if (isDuplicate) return;
+            if (isDuplicateLog(entry)) return;
 
             logs.unshift(entry);
+            indexLogEntry(entry);
             updateContentHeight();
 
             scrollToTop();
@@ -1168,30 +1171,72 @@
 
         function appendUniqueLogs(apiLogs) {
             const normalizedLogs = normalizeApiLogs(apiLogs);
-            const existingIds = new Set(logs.filter(l => l.id != null).map(l => l.id));
-            const existingSignatures = new Set(logs.map(l => l.signature));
             const uniqueLogs = normalizedLogs.filter(log => {
-                if (log.id != null && existingIds.has(log.id)) return false;
-                if (existingSignatures.has(log.signature)) return false;
+                if (isDuplicateLog(log)) return false;
                 return true;
             });
 
             logs = logs.concat(uniqueLogs);
+            for (const log of uniqueLogs) {
+                indexLogEntry(log);
+            }
             return uniqueLogs;
         }
 
         function prependUniqueLogs(apiLogs) {
             const normalizedLogs = normalizeApiLogs(apiLogs);
-            const existingIds = new Set(logs.filter(l => l.id != null).map(l => l.id));
-            const existingSignatures = new Set(logs.map(l => l.signature));
             const uniqueLogs = normalizedLogs.filter(log => {
-                if (log.id != null && existingIds.has(log.id)) return false;
-                if (existingSignatures.has(log.signature)) return false;
+                if (isDuplicateLog(log)) return false;
                 return true;
             });
 
             logs = uniqueLogs.concat(logs);
+            for (const log of uniqueLogs) {
+                indexLogEntry(log);
+            }
             return uniqueLogs;
+        }
+
+        function resetLogIndexes() {
+            logSignatures.clear();
+            logIDs.clear();
+        }
+
+        function rebuildLogIndexes() {
+            resetLogIndexes();
+            for (const log of logs) {
+                indexLogEntry(log);
+            }
+        }
+
+        function indexLogEntry(log) {
+            if (log.id != null) {
+                logIDs.add(log.id);
+            }
+            logSignatures.add(log.signature);
+        }
+
+        function isDuplicateLog(log) {
+            if (log.id != null && logIDs.has(log.id)) {
+                return true;
+            }
+            return logSignatures.has(log.signature);
+        }
+
+        function getEmptyStateMessage() {
+            if (activeServerFilters.size === 0) {
+                return NO_SERVERS_SELECTED_MESSAGE;
+            }
+
+            const hasActiveFilters = searchQuery
+                || activeLevelFilters.size < LEVEL_VALUES.length
+                || activeServerFilters.size < allServerNames.length;
+
+            if (hasActiveFilters) {
+                return NO_MATCHING_LOGS_MESSAGE;
+            }
+
+            return DEFAULT_EMPTY_MESSAGE;
         }
 
         function renderFrame() {
@@ -1208,7 +1253,7 @@
                 contentSpacer.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📭</div>
-                        <div>Waiting for logs...</div>
+                        <div>${escapeHtml(getEmptyStateMessage())}</div>
                     </div>
                 `;
                 return;
