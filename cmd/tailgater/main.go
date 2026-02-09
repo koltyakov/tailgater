@@ -46,20 +46,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	*configPath = resolveConfigPath(*configPath)
+
 	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
-	}
-
-	// Expand config path
-	if *configPath == "tailgater.yaml" {
-		if home, err := os.UserHomeDir(); err == nil {
-			globalConfig := filepath.Join(home, ".tailgater.yaml")
-			if _, err := os.Stat(globalConfig); err == nil {
-				*configPath = globalConfig
-			}
-		}
 	}
 
 	// Watch config for changes
@@ -153,11 +145,11 @@ func main() {
 
 	// Determine mode:
 	// - -web only: web only, no stdout
-	// - -cli only: CLI only, no web  
+	// - -cli only: CLI only, no web
 	// - both -web and -cli: both
 	// - neither: CLI only (backward compatible default)
 	var runWeb, runCLI bool
-	
+
 	switch {
 	case *webMode && *cliMode:
 		// Both flags explicitly set
@@ -235,6 +227,28 @@ func main() {
 	}
 
 	log.Println("Shutdown complete")
+}
+
+func resolveConfigPath(path string) string {
+	if path != "tailgater.yaml" {
+		return path
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+
+	globalConfig := filepath.Join(home, ".tailgater.yaml")
+	if _, err := os.Stat(globalConfig); err == nil {
+		return globalConfig
+	}
+
+	return path
 }
 
 func consumeLogs(tail *tailer.Tailer, store *web.LogStore) {

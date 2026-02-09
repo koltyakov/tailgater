@@ -18,6 +18,8 @@ type Tailer struct {
 	config     *config.Config
 	highlights []HighlightRule
 	output     chan ssh.LogLine
+	subs       map[chan ssh.LogLine]struct{}
+	subsMu     sync.RWMutex
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
@@ -47,6 +49,7 @@ func New(cfg *config.Config, manager *ssh.Manager) (*Tailer, error) {
 		manager: manager,
 		config:  cfg,
 		output:  make(chan ssh.LogLine, 1000),
+		subs:    make(map[chan ssh.LogLine]struct{}),
 		ctx:     ctx,
 		cancel:  cancel,
 	}
@@ -85,6 +88,9 @@ func (t *Tailer) Start() error {
 		return fmt.Errorf("tailer already running")
 	}
 
+	t.wg.Add(1)
+	go t.dispatchOutput()
+
 	tailConfig := t.config.GetTailConfig()
 	files := strings.Join(tailConfig.Files, " ")
 	options := tailConfig.Options
@@ -109,40 +115,120 @@ func (t *Tailer) Start() error {
 	return nil
 }
 
+func (t *Tailer) dispatchOutput() {
+	defer t.wg.Done()
+
+	for {
+		select {
+		case line, ok := <-t.output:
+			if !ok {
+				t.closeSubscribers()
+				return
+			}
+
+			t.subsMu.RLock()
+			subs := make([]chan ssh.LogLine, 0, len(t.subs))
+			for ch := range t.subs {
+				subs = append(subs, ch)
+			}
+			t.subsMu.RUnlock()
+
+			for _, ch := range subs {
+				select {
+				case ch <- line:
+				default:
+					// Subscriber is slow; drop to protect the tailer pipeline.
+				}
+			}
+		case <-t.ctx.Done():
+			t.closeSubscribers()
+			return
+		}
+	}
+}
+
+func (t *Tailer) closeSubscribers() {
+	t.subsMu.Lock()
+	defer t.subsMu.Unlock()
+
+	for ch := range t.subs {
+		close(ch)
+		delete(t.subs, ch)
+	}
+}
+
+// Subscribe returns a channel that receives all log lines.
+func (t *Tailer) Subscribe(buffer int) <-chan ssh.LogLine {
+	if buffer <= 0 {
+		buffer = 256
+	}
+
+	ch := make(chan ssh.LogLine, buffer)
+	t.subsMu.Lock()
+	t.subs[ch] = struct{}{}
+	t.subsMu.Unlock()
+	return ch
+}
+
 func (t *Tailer) handleOutput(client *ssh.Client) {
 	defer t.wg.Done()
 
 	localOutput := make(chan ssh.LogLine, 100)
 
-	// Start readers
-	go client.ReadOutput(t.ctx, localOutput)
-	go client.ReadError(t.ctx, localOutput)
+	var readers sync.WaitGroup
+	readers.Add(2)
+
+	go func() {
+		defer readers.Done()
+		client.ReadOutput(t.ctx, localOutput)
+	}()
+	go func() {
+		defer readers.Done()
+		client.ReadError(t.ctx, localOutput)
+	}()
+	go func() {
+		readers.Wait()
+		close(localOutput)
+	}()
 
 	for {
 		select {
-		case line := <-localOutput:
-			// Apply highlighting rules
-			for _, rule := range t.highlights {
-				if rule.Regex.MatchString(line.Content) {
-					switch rule.Name {
-					case "error", "fatal":
-						line.IsError = true
-					case "warning", "warn":
-						line.IsWarning = true
-					}
-					break
-				}
-			}
-
-			select {
-			case t.output <- line:
-			case <-t.ctx.Done():
+		case line, ok := <-localOutput:
+			if !ok {
 				return
 			}
+
+			t.applyHighlightRules(&line)
+
+			t.publish(line)
 
 		case <-t.ctx.Done():
 			return
 		}
+	}
+}
+
+func (t *Tailer) applyHighlightRules(line *ssh.LogLine) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	for _, rule := range t.highlights {
+		if rule.Regex.MatchString(line.Content) {
+			switch strings.ToLower(rule.Name) {
+			case "error", "fatal":
+				line.IsError = true
+			case "warning", "warn":
+				line.IsWarning = true
+			}
+			return
+		}
+	}
+}
+
+func (t *Tailer) publish(line ssh.LogLine) {
+	select {
+	case t.output <- line:
+	case <-t.ctx.Done():
 	}
 }
 
@@ -154,53 +240,29 @@ func (t *Tailer) handleReconnect(client *ssh.Client, cmd string) {
 	for {
 		select {
 		case <-client.ReconnectChannel():
-			// Connection lost, wait and reconnect
-			select {
-			case <-time.After(reconnectDelay):
-			case <-t.ctx.Done():
-				return
-			}
-
-			// Try to reconnect
-			if err := client.Disconnect(); err != nil {
-				// Log error but continue
-			}
-
-			if err := client.Connect(); err != nil {
-				// Send error to output
+			for {
 				select {
-				case t.output <- ssh.LogLine{
-					ServerName: client.Name(),
-					Content:    fmt.Sprintf("[TAILGATER] Reconnect failed: %v", err),
-					Timestamp:  time.Now(),
-					IsError:    true,
-				}:
 				case <-t.ctx.Done():
 					return
+				case <-time.After(reconnectDelay):
 				}
-				continue
-			}
 
-			// Restart tail command
-			if err := client.Execute(cmd); err != nil {
-				select {
-				case t.output <- ssh.LogLine{
-					ServerName: client.Name(),
-					Content:    fmt.Sprintf("[TAILGATER] Failed to restart tail: %v", err),
-					Timestamp:  time.Now(),
-					IsError:    true,
-				}:
-				case <-t.ctx.Done():
-					return
+				_ = client.Disconnect()
+
+				if err := client.Connect(); err != nil {
+					t.publishReconnectError(client.Name(), fmt.Sprintf("Reconnect failed: %v", err))
+					continue
 				}
-				continue
-			}
 
-			// Restart output handlers
-			t.wg.Add(2)
-			go t.handleOutput(client)
-			go t.handleReconnect(client, cmd)
-			return
+				if err := client.Execute(cmd); err != nil {
+					t.publishReconnectError(client.Name(), fmt.Sprintf("Failed to restart tail: %v", err))
+					continue
+				}
+
+				t.wg.Add(1)
+				go t.handleOutput(client)
+				break
+			}
 
 		case <-t.ctx.Done():
 			return
@@ -208,24 +270,36 @@ func (t *Tailer) handleReconnect(client *ssh.Client, cmd string) {
 	}
 }
 
+func (t *Tailer) publishReconnectError(serverName, msg string) {
+	select {
+	case t.output <- ssh.LogLine{
+		ServerName: serverName,
+		Content:    "[TAILGATER] " + msg,
+		Timestamp:  time.Now(),
+		IsError:    true,
+	}:
+	default:
+	}
+}
+
 // Stop stops all tailing operations
 func (t *Tailer) Stop() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if !t.isRunning {
+		t.mu.Unlock()
 		return
 	}
+	t.isRunning = false
+	t.mu.Unlock()
 
 	t.cancel()
 	t.wg.Wait()
 	close(t.output)
-	t.isRunning = false
 }
 
 // Output returns the output channel
 func (t *Tailer) Output() <-chan ssh.LogLine {
-	return t.output
+	return t.Subscribe(1000)
 }
 
 // IsRunning returns whether the tailer is running

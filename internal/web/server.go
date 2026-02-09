@@ -4,8 +4,10 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 	"strconv"
@@ -29,12 +31,21 @@ type Server struct {
 	tailer    *tailer.Tailer
 	manager   *ssh.Manager
 	upgrader  websocket.Upgrader
-	clients   map[*websocket.Conn]bool
+	clients   map[*websocket.Conn]*wsClient
 	broadcast chan LogMessage
 	mu        sync.RWMutex
 	server    *http.Server
 	stats     ServerStats
 	logStore  *LogStore
+	indexTmpl *template.Template
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+}
+
+type wsClient struct {
+	conn   *websocket.Conn
+	writeM sync.Mutex
 }
 
 // LogMessage represents a log message sent to clients
@@ -65,13 +76,26 @@ type ServerStatus struct {
 	WarnCount  int64  `json:"warn_count"`
 }
 
+type statsPayload struct {
+	Servers        []ServerStatus `json:"servers"`
+	TotalLines     int64          `json:"total_lines"`
+	TotalErrors    int64          `json:"total_errors"`
+	TotalWarnings  int64          `json:"total_warnings"`
+	LinesPerSecond float64        `json:"lines_per_second"`
+}
+
 // NewServer creates a new web server
 func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager, store *LogStore) (*Server, error) {
+	tmpl, err := template.New("index.html").Funcs(funcMap()).ParseFS(content, "templates/index.html")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse index template: %w", err)
+	}
+
 	s := &Server{
 		config:    cfg,
 		tailer:    t,
 		manager:   manager,
-		clients:   make(map[*websocket.Conn]bool),
+		clients:   make(map[*websocket.Conn]*wsClient),
 		broadcast: make(chan LogMessage, 1000),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -81,7 +105,8 @@ func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager, store
 		stats: ServerStats{
 			Servers: make([]ServerStatus, 0),
 		},
-		logStore: store,
+		logStore:  store,
+		indexTmpl: tmpl,
 	}
 
 	// Initialize server status
@@ -98,6 +123,12 @@ func NewServer(cfg *config.Config, t *tailer.Tailer, manager *ssh.Manager, store
 // Start starts the web server
 func (s *Server) Start() error {
 	webCfg := s.config.Web
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	staticFS, err := fs.Sub(content, "static")
+	if err != nil {
+		return fmt.Errorf("failed to load static assets: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
@@ -108,51 +139,54 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/logs", s.handleLogs)
 	mux.HandleFunc("/api/logs/search", s.handleLogSearch)
 	mux.HandleFunc("/api/logs/count", s.handleLogCount)
-	mux.Handle("/static/", http.FileServer(http.FS(content)))
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", webCfg.Host, webCfg.Port),
 		Handler: mux,
 	}
 
-	// Start broadcaster
+	// Start background workers.
+	s.wg.Add(4)
 	go s.broadcaster()
-
-	// Start stats updater
 	go s.statsUpdater()
-
-	// Start log consumer
 	go s.consumeLogs()
-
-	// Start log pruning (keep last 24 hours)
 	go s.logPruner()
 
 	log.Printf("Web dashboard starting on http://%s:%d", webCfg.Host, webCfg.Port)
-	return s.server.ListenAndServe()
+	err = s.server.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // Stop stops the web server
 func (s *Server) Stop(ctx context.Context) error {
-	if s.server != nil {
-		return s.server.Shutdown(ctx)
+	if s.cancel != nil {
+		s.cancel()
 	}
-	return nil
+	s.closeAllClients()
+
+	var shutdownErr error
+	if s.server != nil {
+		shutdownErr = s.server.Shutdown(ctx)
+	}
+
+	s.wg.Wait()
+	return shutdownErr
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFS(content, "templates/index.html")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	data := struct {
 		Servers []config.ServerConfig
 	}{
 		Servers: s.config.GetServers(),
 	}
 
-	tmpl.Execute(w, data)
+	if err := s.indexTmpl.Execute(w, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -161,46 +195,101 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
-
-	s.mu.Lock()
-	s.clients[conn] = true
-	s.mu.Unlock()
+	client := s.addClient(conn)
+	defer s.removeClient(conn)
 
 	// Send initial stats
-	s.sendStats(conn)
+	if err := s.sendStats(client); err != nil {
+		return
+	}
 
 	// Keep connection alive and handle ping/pong
 	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+		}
+
 		_, _, err := conn.ReadMessage()
 		if err != nil {
-			s.mu.Lock()
-			delete(s.clients, conn)
-			s.mu.Unlock()
-			break
+			return
 		}
 	}
 }
 
+func (s *Server) addClient(conn *websocket.Conn) *wsClient {
+	client := &wsClient{conn: conn}
+	s.mu.Lock()
+	s.clients[conn] = client
+	s.mu.Unlock()
+	return client
+}
+
+func (s *Server) removeClient(conn *websocket.Conn) {
+	s.mu.Lock()
+	client, ok := s.clients[conn]
+	if ok {
+		delete(s.clients, conn)
+	}
+	s.mu.Unlock()
+
+	if ok {
+		_ = client.conn.Close()
+	}
+}
+
+func (s *Server) getClientsSnapshot() []*wsClient {
+	s.mu.RLock()
+	clients := make([]*wsClient, 0, len(s.clients))
+	for _, client := range s.clients {
+		clients = append(clients, client)
+	}
+	s.mu.RUnlock()
+	return clients
+}
+
+func (s *Server) closeAllClients() {
+	s.mu.Lock()
+	clients := make([]*wsClient, 0, len(s.clients))
+	for _, client := range s.clients {
+		clients = append(clients, client)
+	}
+	s.clients = make(map[*websocket.Conn]*wsClient)
+	s.mu.Unlock()
+
+	for _, client := range clients {
+		_ = client.conn.Close()
+	}
+}
+
+func (s *Server) writeJSON(client *wsClient, v any) error {
+	client.writeM.Lock()
+	defer client.writeM.Unlock()
+	return client.conn.WriteJSON(v)
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats := s.snapshotStats()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (s *Server) snapshotStats() statsPayload {
 	s.stats.mu.RLock()
-	stats := struct {
-		Servers        []ServerStatus `json:"servers"`
-		TotalLines     int64          `json:"total_lines"`
-		TotalErrors    int64          `json:"total_errors"`
-		TotalWarnings  int64          `json:"total_warnings"`
-		LinesPerSecond float64        `json:"lines_per_second"`
-	}{
-		Servers:        s.stats.Servers,
+	defer s.stats.mu.RUnlock()
+
+	servers := make([]ServerStatus, len(s.stats.Servers))
+	copy(servers, s.stats.Servers)
+
+	return statsPayload{
+		Servers:        servers,
 		TotalLines:     s.stats.TotalLines,
 		TotalErrors:    s.stats.TotalErrors,
 		TotalWarnings:  s.stats.TotalWarnings,
 		LinesPerSecond: s.stats.LinesPerSecond,
 	}
-	s.stats.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
 }
 
 func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
@@ -421,54 +510,65 @@ func (s *Server) handleLogCount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) broadcaster() {
-	for msg := range s.broadcast {
-		s.mu.RLock()
-		clients := make([]*websocket.Conn, 0, len(s.clients))
-		for client := range s.clients {
-			clients = append(clients, client)
-		}
-		s.mu.RUnlock()
+	defer s.wg.Done()
 
-		for _, client := range clients {
-			if err := client.WriteJSON(msg); err != nil {
-				// Remove failed client
-				s.mu.Lock()
-				delete(s.clients, client)
-				s.mu.Unlock()
-				client.Close()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case msg := <-s.broadcast:
+			for _, client := range s.getClientsSnapshot() {
+				if err := s.writeJSON(client, msg); err != nil {
+					s.removeClient(client.conn)
+				}
 			}
-		}
 
-		// Update stats
-		s.updateStats(msg)
+			// Update stats
+			s.updateStats(msg)
+		}
 	}
 }
 
 func (s *Server) consumeLogs() {
-	output := s.tailer.Output()
-	for line := range output {
-		msg := LogMessage{
-			ServerName: line.ServerName,
-			Content:    line.Content,
-			Timestamp:  line.Timestamp,
-			IsError:    line.IsError,
-			IsWarning:  line.IsWarning,
-		}
+	defer s.wg.Done()
 
+	output := s.tailer.Output()
+	for {
 		select {
-		case s.broadcast <- msg:
-		default:
-			// Channel full, drop message
+		case <-s.ctx.Done():
+			return
+		case line, ok := <-output:
+			if !ok {
+				return
+			}
+
+			msg := LogMessage{
+				ServerName: line.ServerName,
+				Content:    line.Content,
+				Timestamp:  line.Timestamp,
+				IsError:    line.IsError,
+				IsWarning:  line.IsWarning,
+			}
+
+			select {
+			case s.broadcast <- msg:
+			default:
+				// Channel full, drop message
+			}
 		}
 	}
 }
 
 func (s *Server) logPruner() {
+	defer s.wg.Done()
+
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
 		case <-ticker.C:
 			if s.logStore != nil {
 				// Prune logs older than 24 hours
@@ -529,11 +629,15 @@ func (s *Server) updateStats(msg LogMessage) {
 }
 
 func (s *Server) statsUpdater() {
+	defer s.wg.Done()
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
 		case <-ticker.C:
 			// Update connection status
 			s.stats.mu.Lock()
@@ -544,37 +648,17 @@ func (s *Server) statsUpdater() {
 			}
 			s.stats.mu.Unlock()
 
-			// Broadcast to all clients
-			s.mu.RLock()
-			clients := make([]*websocket.Conn, 0, len(s.clients))
-			for client := range s.clients {
-				clients = append(clients, client)
-			}
-			s.mu.RUnlock()
-
-			for _, client := range clients {
-				s.sendStats(client)
+			for _, client := range s.getClientsSnapshot() {
+				if err := s.sendStats(client); err != nil {
+					s.removeClient(client.conn)
+				}
 			}
 		}
 	}
 }
 
-func (s *Server) sendStats(conn *websocket.Conn) {
-	s.stats.mu.RLock()
-	stats := struct {
-		Servers        []ServerStatus `json:"servers"`
-		TotalLines     int64          `json:"total_lines"`
-		TotalErrors    int64          `json:"total_errors"`
-		TotalWarnings  int64          `json:"total_warnings"`
-		LinesPerSecond float64        `json:"lines_per_second"`
-	}{
-		Servers:        s.stats.Servers,
-		TotalLines:     s.stats.TotalLines,
-		TotalErrors:    s.stats.TotalErrors,
-		TotalWarnings:  s.stats.TotalWarnings,
-		LinesPerSecond: s.stats.LinesPerSecond,
-	}
-	s.stats.mu.RUnlock()
+func (s *Server) sendStats(client *wsClient) error {
+	stats := s.snapshotStats()
 
 	msg := struct {
 		Type  string `json:"type"`
@@ -584,7 +668,7 @@ func (s *Server) sendStats(conn *websocket.Conn) {
 		Stats: stats,
 	}
 
-	conn.WriteJSON(msg)
+	return s.writeJSON(client, msg)
 }
 
 // Template functions

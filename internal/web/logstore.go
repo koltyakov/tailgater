@@ -13,9 +13,10 @@ import (
 
 // LogStore provides SQLite-backed storage for log messages
 type LogStore struct {
-	db   *sql.DB
-	path string
-	mu   sync.RWMutex
+	db     *sql.DB
+	path   string
+	isTemp bool
+	mu     sync.RWMutex
 }
 
 // LogEntry represents a stored log entry
@@ -54,8 +55,9 @@ func newLogStoreAtPath(dbPath string, isTemp bool) (*LogStore, error) {
 	}
 
 	store := &LogStore{
-		db:   db,
-		path: dbPath,
+		db:     db,
+		path:   dbPath,
+		isTemp: isTemp,
 	}
 
 	if err := store.initSchema(); err != nil {
@@ -75,10 +77,10 @@ func (s *LogStore) Close() error {
 	defer s.mu.Unlock()
 
 	if s.db != nil {
-		s.db.Close()
+		_ = s.db.Close()
 	}
-	if s.path != "" {
-		os.Remove(s.path)
+	if s.path != "" && s.isTemp {
+		_ = os.Remove(s.path)
 	}
 	return nil
 }
