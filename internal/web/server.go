@@ -248,30 +248,39 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
+	beforeTimestamp, beforeID, err := parseLogCursor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Parse filters
 	serversParam := r.URL.Query().Get("servers")
 	levelsParam := r.URL.Query().Get("levels")
 
-	var servers, levels []string
-	if serversParam != "" {
-		servers = strings.Split(serversParam, ",")
-	}
-	if levelsParam != "" {
-		levels = strings.Split(levelsParam, ",")
-	}
+	servers := parseCSVQueryParam(serversParam)
+	levels := parseCSVQueryParam(levelsParam)
 
 	var entries []LogEntry
-	var err error
+	var queryErr error
 
-	// Use filtered query if filters are provided
-	if len(servers) > 0 || len(levels) > 0 {
-		entries, err = s.logStore.GetWithFilters(servers, levels, limit, offset)
+	if beforeTimestamp != nil && beforeID != nil {
+		if len(servers) > 0 || len(levels) > 0 {
+			entries, queryErr = s.logStore.GetWithFiltersBefore(servers, levels, limit, *beforeTimestamp, *beforeID)
+		} else {
+			entries, queryErr = s.logStore.GetRecentBefore(limit, *beforeTimestamp, *beforeID)
+		}
 	} else {
-		entries, err = s.logStore.GetRecent(limit, offset)
+		// Use filtered query if filters are provided
+		if len(servers) > 0 || len(levels) > 0 {
+			entries, queryErr = s.logStore.GetWithFilters(servers, levels, limit, offset)
+		} else {
+			entries, queryErr = s.logStore.GetRecent(limit, offset)
+		}
 	}
 
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to fetch logs: %v", err), http.StatusInternalServerError)
+	if queryErr != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch logs: %v", queryErr), http.StatusInternalServerError)
 		return
 	}
 
@@ -302,35 +311,86 @@ func (s *Server) handleLogSearch(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
+	beforeTimestamp, beforeID, err := parseLogCursor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Parse filters
 	serversParam := r.URL.Query().Get("servers")
 	levelsParam := r.URL.Query().Get("levels")
 
-	var servers, levels []string
-	if serversParam != "" {
-		servers = strings.Split(serversParam, ",")
-	}
-	if levelsParam != "" {
-		levels = strings.Split(levelsParam, ",")
-	}
+	servers := parseCSVQueryParam(serversParam)
+	levels := parseCSVQueryParam(levelsParam)
 
 	var entries []LogEntry
-	var err error
+	var queryErr error
 
-	// Use filtered search if filters are provided
-	if len(servers) > 0 || len(levels) > 0 {
-		entries, err = s.logStore.SearchWithFilters(query, servers, levels, limit, offset)
+	if beforeTimestamp != nil && beforeID != nil {
+		if len(servers) > 0 || len(levels) > 0 {
+			entries, queryErr = s.logStore.SearchWithFiltersBefore(query, servers, levels, limit, *beforeTimestamp, *beforeID)
+		} else {
+			entries, queryErr = s.logStore.SearchBefore(query, limit, *beforeTimestamp, *beforeID)
+		}
 	} else {
-		entries, err = s.logStore.Search(query, limit, offset)
+		// Use filtered search if filters are provided
+		if len(servers) > 0 || len(levels) > 0 {
+			entries, queryErr = s.logStore.SearchWithFilters(query, servers, levels, limit, offset)
+		} else {
+			entries, queryErr = s.logStore.Search(query, limit, offset)
+		}
 	}
 
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to search logs: %v", err), http.StatusInternalServerError)
+	if queryErr != nil {
+		http.Error(w, fmt.Sprintf("Failed to search logs: %v", queryErr), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entries)
+}
+
+func parseCSVQueryParam(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		v := strings.TrimSpace(part)
+		if v != "" {
+			values = append(values, v)
+		}
+	}
+
+	return values
+}
+
+func parseLogCursor(r *http.Request) (*time.Time, *int64, error) {
+	beforeIDParam := strings.TrimSpace(r.URL.Query().Get("before_id"))
+	beforeTSParam := strings.TrimSpace(r.URL.Query().Get("before_ts"))
+
+	if beforeIDParam == "" && beforeTSParam == "" {
+		return nil, nil, nil
+	}
+
+	if beforeIDParam == "" || beforeTSParam == "" {
+		return nil, nil, fmt.Errorf("both before_id and before_ts are required")
+	}
+
+	beforeID, err := strconv.ParseInt(beforeIDParam, 10, 64)
+	if err != nil || beforeID <= 0 {
+		return nil, nil, fmt.Errorf("invalid before_id")
+	}
+
+	beforeTS, err := time.Parse(time.RFC3339Nano, beforeTSParam)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid before_ts")
+	}
+
+	return &beforeTS, &beforeID, nil
 }
 
 // handleLogCount returns total log counts

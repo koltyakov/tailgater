@@ -64,6 +64,7 @@
             display: flex;
             flex: 1;
             overflow: hidden;
+            min-height: 0;
         }
 
         .sidebar {
@@ -272,6 +273,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-height: 0;
         }
 
         .logs-header {
@@ -333,6 +335,8 @@
 
         .logs-container {
             flex: 1;
+            min-height: 0;
+            height: 100%;
             overflow-y: auto;
             overflow-x: hidden;
             font-family: 'SFMono-Regular', 'Monaco', 'Menlo', 'Consolas', monospace;
@@ -427,6 +431,9 @@
             position: relative;
             flex: 1;
             overflow: hidden;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         ::-webkit-scrollbar {
@@ -552,7 +559,6 @@
                 <h2>Live Logs</h2>
                 <div class="log-controls">
                     <button id="btn-autoscroll" class="active" onclick="toggleAutoScroll()">Auto-scroll</button>
-                    <button id="btn-jump-top" onclick="enableAutoScroll()" style="display: none;">Jump to Top ↓</button>
                 </div>
             </div>
             <div class="logs-table-header">
@@ -579,60 +585,60 @@
         const LOG_HEIGHT = 22;
         const BUFFER_SIZE = 15;
         const PAGE_SIZE = 200;
+        const SEARCH_DEBOUNCE_MS = 250;
+        const LEVEL_VALUES = ['error', 'warning', 'info', 'debug'];
         
         let ws;
         let autoScroll = true;
-        let userScrolling = false;
-        let scrollTimeout = null;
-        let isSearching = false;
         let searchQuery = '';
+        let searchDebounceTimer = null;
         
         // Data storage
-        let logs = []; // Current visible logs from DB
+        let logs = [];
         let totalCount = 0;
-        let currentOffset = 0;
         let hasMoreLogs = true;
         let isLoading = false;
-        let activeLevelFilters = new Set(['error', 'warning', 'info', 'debug']);
+        let requestEpoch = 0;
+        let oldestCursor = null; // { id, timestamp }
+        let activeLevelFilters = new Set(LEVEL_VALUES);
         let activeServerFilters = new Set();
+        let allServerNames = [];
         
-        let sessionCounts = { error: 0, warning: 0, info: 0, debug: 0 }; // Session totals across all servers
-        let filterCounts = { error: 0, warning: 0, info: 0, debug: 0 }; // Filtered counts across active servers
-        let serverLevelCounts = {}; // Track counts per server per level: { serverName: { error: 0, warning: 0, info: 0, debug: 0 } }
+        let sessionCounts = { error: 0, warning: 0, info: 0, debug: 0 };
+        let filterCounts = { error: 0, warning: 0, info: 0, debug: 0 };
+        let serverLevelCounts = {};
         let lastLinesTime = Date.now();
         let linesInLastSecond = 0;
         
         // DOM elements
         let container, contentSpacer;
+        let isScrollingProgrammatically = false;
 
         async function init() {
             container = document.getElementById('logs-container');
             contentSpacer = document.getElementById('virtual-content');
             
-            // Setup scroll listener
             container.addEventListener('scroll', handleScroll, { passive: true });
             
-            // Initialize server filters from checkboxes
-            document.querySelectorAll('[data-filter="server"]').forEach(cb => {
+            const serverCheckboxes = Array.from(document.querySelectorAll('[data-filter="server"]'));
+            allServerNames = serverCheckboxes.map(cb => cb.value);
+            serverCheckboxes.forEach(cb => {
                 if (cb.checked) {
                     activeServerFilters.add(cb.value);
                 }
             });
             
-            // Setup filter listeners
             document.querySelectorAll('[data-filter="level"]').forEach(cb => {
                 cb.addEventListener('change', handleLevelFilterChange);
             });
-            document.querySelectorAll('[data-filter="server"]').forEach(cb => {
+            serverCheckboxes.forEach(cb => {
                 cb.addEventListener('change', handleServerFilterChange);
             });
             
-            // Setup search
             setupSearch();
             
-            // Load initial logs and counts
             await Promise.all([
-                loadLogs(),
+                resetLogsAndReload(),
                 updateFilterCountsFromAPI()
             ]);
 
@@ -644,17 +650,10 @@
             const input = document.getElementById('search-input');
             const clearBtn = document.getElementById('search-clear');
             
-            // Real-time filtering on input
             input.addEventListener('input', (e) => {
                 searchQuery = e.target.value.trim();
-                isSearching = searchQuery.length > 0;
-                
-                // Show/hide clear button
                 clearBtn.style.display = searchQuery.length > 0 ? 'block' : 'none';
-                
-                // Re-render with search filter applied client-side
-                renderFrame();
-                updateContentHeight();
+                scheduleLogsReload();
             });
         }
 
@@ -665,55 +664,113 @@
             input.value = '';
             clearBtn.style.display = 'none';
             searchQuery = '';
-            isSearching = false;
-            
-            // Re-render without search filter
-            renderFrame();
-            updateContentHeight();
+            scheduleLogsReload();
+        }
+
+        function scheduleLogsReload() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                resetLogsAndReload();
+            }, SEARCH_DEBOUNCE_MS);
+        }
+
+        function buildLogQueryParams() {
+            const params = new URLSearchParams();
+            params.set('limit', PAGE_SIZE.toString());
+
+            if (oldestCursor) {
+                params.set('before_id', oldestCursor.id.toString());
+                params.set('before_ts', oldestCursor.timestamp);
+            }
+
+            if (activeLevelFilters.size === 0) {
+                params.set('levels', '__none__');
+            } else if (activeLevelFilters.size < LEVEL_VALUES.length) {
+                params.set('levels', Array.from(activeLevelFilters).join(','));
+            }
+
+            if (activeServerFilters.size > 0 && activeServerFilters.size < allServerNames.length) {
+                params.set('servers', Array.from(activeServerFilters).join(','));
+            }
+
+            if (searchQuery) {
+                params.set('q', searchQuery);
+            }
+
+            return params;
+        }
+
+        async function loadInitialLogsFromAPI() {
+            const epoch = requestEpoch;
+            isLoading = true;
+
+            try {
+                const params = buildLogQueryParams();
+                params.delete('before_id');
+                params.delete('before_ts');
+
+                const isSearch = Boolean(searchQuery);
+                const url = isSearch
+                    ? `/api/logs/search?${params.toString()}`
+                    : `/api/logs?${params.toString()}`;
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const page = await response.json();
+                if (epoch !== requestEpoch) return;
+
+                logs = normalizeApiLogs(page);
+                hasMoreLogs = page.length === PAGE_SIZE;
+                oldestCursor = page.length > 0
+                    ? { id: page[page.length - 1].id, timestamp: page[page.length - 1].timestamp }
+                    : null;
+
+                serverLevelCounts = {};
+                for (const log of logs) {
+                    if (!serverLevelCounts[log.server]) {
+                        serverLevelCounts[log.server] = { error: 0, warning: 0, info: 0, debug: 0 };
+                    }
+                    serverLevelCounts[log.server][log.level]++;
+                }
+                updateAllCounters();
+                updateContentHeight();
+            } catch (err) {
+                console.error('Failed to load initial logs:', err);
+            } finally {
+                if (epoch === requestEpoch) {
+                    isLoading = false;
+                }
+            }
         }
 
         async function loadLogs() {
             if (isLoading || !hasMoreLogs) return;
+            const epoch = requestEpoch;
             isLoading = true;
 
             try {
-                let url;
-                const params = new URLSearchParams();
-                params.set('limit', PAGE_SIZE.toString());
-                params.set('offset', currentOffset.toString());
-                
-                // Don't filter server-side, we filter client-side for consistency with WebSocket
-                
-                if (isSearching && searchQuery) {
-                    params.set('q', searchQuery);
-                    url = `/api/logs/search?${params.toString()}`;
-                } else {
-                    url = `/api/logs?${params.toString()}`;
-                }
+                const params = buildLogQueryParams();
+                const isSearch = Boolean(searchQuery);
+                const url = isSearch
+                    ? `/api/logs/search?${params.toString()}`
+                    : `/api/logs?${params.toString()}`;
 
                 const response = await fetch(url);
-                const newLogs = await response.json();
-
-                if (newLogs.length < PAGE_SIZE) {
-                    hasMoreLogs = false;
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
                 }
 
-                // Normalize API response to match expected format
-                const normalizedLogs = newLogs.map(log => ({
-                    id: log.id,
-                    level: log.level,
-                    time: formatTime(log.timestamp),
-                    timestamp: log.timestamp,
-                    server: log.server_name,
-                    content: log.content
-                }));
+                const newLogs = await response.json();
+                if (epoch !== requestEpoch) return;
 
-                // Add only unique logs (avoid duplicates from WebSocket)
-                const existingIds = new Set(logs.map(l => l.id));
-                const uniqueLogs = normalizedLogs.filter(log => !existingIds.has(log.id));
+                hasMoreLogs = newLogs.length === PAGE_SIZE;
 
-                // Initialize server-level counts from loaded logs (only on first load)
-                if (currentOffset === 0) {
+                const uniqueLogs = appendUniqueLogs(newLogs);
+
+                if (!oldestCursor && uniqueLogs.length > 0) {
                     serverLevelCounts = {};
                     for (const log of uniqueLogs) {
                         if (!serverLevelCounts[log.server]) {
@@ -724,18 +781,69 @@
                     updateAllCounters();
                 }
 
-                // Append to logs (newest first from API)
-                logs = logs.concat(uniqueLogs);
-                currentOffset += newLogs.length;
+                if (newLogs.length > 0) {
+                    const oldest = newLogs[newLogs.length - 1];
+                    oldestCursor = { id: oldest.id, timestamp: oldest.timestamp };
+                }
 
-                // Update display
                 updateContentHeight();
 
             } catch (err) {
                 console.error('Failed to load logs:', err);
             } finally {
-                isLoading = false;
+                if (epoch === requestEpoch) {
+                    isLoading = false;
+                }
             }
+        }
+
+        async function loadLatestLogs() {
+            const epoch = requestEpoch;
+
+            try {
+                const params = buildLogQueryParams();
+                params.delete('before_id');
+                params.delete('before_ts');
+
+                const isSearch = Boolean(searchQuery);
+                const url = isSearch
+                    ? `/api/logs/search?${params.toString()}`
+                    : `/api/logs?${params.toString()}`;
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const latestLogs = await response.json();
+                if (epoch !== requestEpoch || latestLogs.length === 0) return;
+
+                const uniqueLogs = prependUniqueLogs(latestLogs);
+                if (uniqueLogs.length === 0) return;
+
+                if (!oldestCursor) {
+                    const oldest = latestLogs[latestLogs.length - 1];
+                    oldestCursor = { id: oldest.id, timestamp: oldest.timestamp };
+                }
+
+                updateContentHeight();
+            } catch (err) {
+                console.error('Failed to refresh latest logs:', err);
+            }
+        }
+
+        async function resetLogsAndReload() {
+            requestEpoch += 1;
+            logs = [];
+            hasMoreLogs = true;
+            isLoading = false;
+            oldestCursor = null;
+
+            scrollToTop();
+            renderFrame();
+
+            await loadInitialLogsFromAPI();
+            renderFrame();
         }
 
         let initialCountsLoaded = false;
@@ -791,10 +899,8 @@
             } else {
                 activeLevelFilters.delete(level);
             }
-            
-            // Re-render with new filters (client-side filtering)
-            renderFrame();
-            updateContentHeight();
+
+            resetLogsAndReload();
         }
 
         function handleServerFilterChange(e) {
@@ -805,54 +911,11 @@
                 activeServerFilters.delete(server);
             }
 
-            // Update all counters
-            updateAllCounters();
-
-            // Re-render with new filters (client-side filtering)
-            renderFrame();
-            updateContentHeight();
+            resetLogsAndReload();
         }
-
-        function getFilteredLogs() {
-            // Filter logs based on current filters
-            // WebSocket logs need client-side filtering
-            // API logs are pre-filtered but we apply search here
-            return logs.filter(log => {
-                // Check level filter
-                if (!activeLevelFilters.has(log.level)) return false;
-
-                // Check server filter
-                if (activeServerFilters.size > 0 && !activeServerFilters.has(log.server)) return false;
-
-                // Check search filter
-                if (isSearching && searchQuery) {
-                    const content = (log.content || '').toLowerCase();
-                    const server = (log.server || '').toLowerCase();
-                    const query = searchQuery.toLowerCase();
-                    if (!content.includes(query) && !server.includes(query)) {
-                        return false;
-                    }
-                }
-
-                return true;
-            });
-        }
-
-        let lastScrollTop = 0;
-        let isScrollingProgrammatically = false;
 
         function handleScroll() {
             const scrollTop = container.scrollTop;
-            const scrollHeight = container.scrollHeight;
-            const clientHeight = container.clientHeight;
-            
-            // Show/hide Jump to top button based on scroll position
-            const jumpBtn = document.getElementById('btn-jump-top');
-            if (scrollTop > 100) {
-                jumpBtn.style.display = 'inline-block';
-            } else {
-                jumpBtn.style.display = 'none';
-            }
             
             // Detect user-initiated scroll (not programmatic)
             if (!isScrollingProgrammatically) {
@@ -862,23 +925,27 @@
                 }
             }
             
-            lastScrollTop = scrollTop;
-            
-            // Debounce scroll end detection
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                userScrolling = false;
-                scrollTimeout = null;
-            }, 150);
-            
-            // Infinite scroll: Load more when near bottom
-            if (scrollTop + clientHeight > scrollHeight - LOG_HEIGHT * BUFFER_SIZE * 2) {
-                if (!isLoading && hasMoreLogs) {
-                    loadLogs().then(() => renderFrame());
-                }
-            }
+            maybeLoadOlderLogs();
             
             renderFrame();
+        }
+
+        function isNearBottom() {
+            if (!container) return false;
+            return container.scrollTop + container.clientHeight >= container.scrollHeight - LOG_HEIGHT * BUFFER_SIZE * 2;
+        }
+
+        function maybeLoadOlderLogs() {
+            if (!container || isLoading || !hasMoreLogs || !isNearBottom()) {
+                return;
+            }
+
+            loadLogs().then(() => {
+                renderFrame();
+                if (!isLoading && hasMoreLogs && isNearBottom()) {
+                    maybeLoadOlderLogs();
+                }
+            });
         }
 
         function disableAutoScroll() {
@@ -890,11 +957,10 @@
             autoScroll = true;
             updateAutoScrollUI();
             scrollToTop();
-            // Reload to get latest
-            currentOffset = 0;
-            logs = [];
-            hasMoreLogs = true;
-            loadLogs().then(() => renderFrame());
+            loadLatestLogs().then(() => {
+                scrollToTop();
+                renderFrame();
+            });
         }
 
         function updateAutoScrollUI() {
@@ -955,30 +1021,6 @@
             const level = getLogLevel(data);
             const serverName = data.server_name;
 
-            // Check if this log already exists (by timestamp+server+content)
-            const timestamp = new Date(data.timestamp).getTime();
-            const isDuplicate = logs.some(log => {
-                const logTime = new Date(log.time).getTime();
-                return Math.abs(logTime - timestamp) < 1000 &&
-                       log.server === serverName &&
-                       log.content === data.content;
-            });
-
-            if (isDuplicate) return;
-
-            // Add to logs array - filtering is done in render
-            const entry = {
-                id: Date.now(),
-                level: level,
-                time: formatTime(data.timestamp),
-                timestamp: data.timestamp, // Store original timestamp for filtering
-                server: serverName,
-                content: data.content
-            };
-
-            // Add to beginning
-            logs.unshift(entry);
-
             // Track session-level counts (all servers)
             sessionCounts[level] = (sessionCounts[level] || 0) + 1;
 
@@ -992,16 +1034,7 @@
             // Update all counters simultaneously
             updateAllCounters();
 
-            // Keep only rendered logs in memory, let scroll trigger load more
-            updateContentHeight();
-
             linesInLastSecond++;
-
-            if (autoScroll) {
-                // Scroll first, then render so visible range is calculated correctly
-                scrollToTop();
-                renderFrame();
-            }
 
             // Update rate
             const now = Date.now();
@@ -1010,6 +1043,33 @@
                 linesInLastSecond = 0;
                 lastLinesTime = now;
             }
+
+            if (!autoScroll) {
+                return;
+            }
+
+            const entry = {
+                id: null,
+                level: level,
+                time: formatTime(data.timestamp),
+                timestamp: data.timestamp,
+                server: serverName,
+                content: data.content,
+                signature: buildLogSignature(data.timestamp, serverName, data.content)
+            };
+
+            if (!matchesRealtimeFilters(entry)) {
+                return;
+            }
+
+            const isDuplicate = logs.some(log => log.signature === entry.signature);
+            if (isDuplicate) return;
+
+            logs.unshift(entry);
+            updateContentHeight();
+
+            scrollToTop();
+            renderFrame();
         }
 
         function updateStats(stats) {
@@ -1057,27 +1117,102 @@
         }
 
         function updateContentHeight() {
-            // Height is now managed in renderFrame
             renderFrame();
+        }
+
+        function matchesRealtimeFilters(log) {
+            if (!activeLevelFilters.has(log.level)) {
+                return false;
+            }
+
+            if (activeServerFilters.size > 0 && activeServerFilters.size < allServerNames.length) {
+                if (!activeServerFilters.has(log.server)) {
+                    return false;
+                }
+            }
+
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                const content = (log.content || '').toLowerCase();
+                const server = (log.server || '').toLowerCase();
+                if (!content.includes(query) && !server.includes(query)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function buildLogSignature(timestamp, server, content) {
+            return `${timestamp}|${server}|${content}`;
+        }
+
+        function normalizeApiLogs(apiLogs) {
+            return apiLogs.map(log => ({
+                id: log.id,
+                level: log.level,
+                time: formatTime(log.timestamp),
+                timestamp: log.timestamp,
+                server: log.server_name,
+                content: log.content,
+                signature: buildLogSignature(log.timestamp, log.server_name, log.content)
+            }));
+        }
+
+        function appendUniqueLogs(apiLogs) {
+            const normalizedLogs = normalizeApiLogs(apiLogs);
+            const existingIds = new Set(logs.filter(l => l.id != null).map(l => l.id));
+            const existingSignatures = new Set(logs.map(l => l.signature));
+            const uniqueLogs = normalizedLogs.filter(log => {
+                if (log.id != null && existingIds.has(log.id)) return false;
+                if (existingSignatures.has(log.signature)) return false;
+                return true;
+            });
+
+            logs = logs.concat(uniqueLogs);
+            return uniqueLogs;
+        }
+
+        function prependUniqueLogs(apiLogs) {
+            const normalizedLogs = normalizeApiLogs(apiLogs);
+            const existingIds = new Set(logs.filter(l => l.id != null).map(l => l.id));
+            const existingSignatures = new Set(logs.map(l => l.signature));
+            const uniqueLogs = normalizedLogs.filter(log => {
+                if (log.id != null && existingIds.has(log.id)) return false;
+                if (existingSignatures.has(log.signature)) return false;
+                return true;
+            });
+
+            logs = uniqueLogs.concat(logs);
+            return uniqueLogs;
         }
 
         function renderFrame() {
             if (!container || !contentSpacer) return;
             
-            const filteredLogs = getFilteredLogs();
             const scrollTop = container.scrollTop;
             const viewportHeight = container.clientHeight;
             
             // Update height for virtual scrolling
-            const totalHeight = filteredLogs.length * LOG_HEIGHT;
+            const totalHeight = logs.length * LOG_HEIGHT;
             contentSpacer.style.height = totalHeight + 'px';
-            
+
+            if (logs.length === 0) {
+                contentSpacer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>Waiting for logs...</div>
+                    </div>
+                `;
+                return;
+            }
+
             const startIdx = Math.max(0, Math.floor(scrollTop / LOG_HEIGHT) - BUFFER_SIZE);
-            const endIdx = Math.min(filteredLogs.length, Math.ceil((scrollTop + viewportHeight) / LOG_HEIGHT) + BUFFER_SIZE);
+            const endIdx = Math.min(logs.length, Math.ceil((scrollTop + viewportHeight) / LOG_HEIGHT) + BUFFER_SIZE);
             
             let html = '';
             for (let i = startIdx; i < endIdx; i++) {
-                const log = filteredLogs[i];
+                const log = logs[i];
                 if (!log) continue;
                 
                 const top = i * LOG_HEIGHT;
@@ -1109,7 +1244,7 @@
         function updateFilterCounts() {
             // Calculate level counts from only active servers
             // If no servers are selected, use session totals (all servers)
-            if (activeServerFilters.size === 0) {
+            if (activeServerFilters.size === 0 || activeServerFilters.size === allServerNames.length) {
                 filterCounts = { ...sessionCounts };
             } else {
                 const levelCounts = { error: 0, warning: 0, info: 0, debug: 0 };
