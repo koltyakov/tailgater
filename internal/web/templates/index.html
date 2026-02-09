@@ -587,6 +587,7 @@
         const PAGE_SIZE = 200;
         const SEARCH_DEBOUNCE_MS = 250;
         const LEVEL_VALUES = ['error', 'warning', 'info', 'debug'];
+        const NONE_SELECTED_TOKEN = '__none__';
         
         let ws;
         let autoScroll = true;
@@ -684,12 +685,14 @@
             }
 
             if (activeLevelFilters.size === 0) {
-                params.set('levels', '__none__');
+                params.set('levels', NONE_SELECTED_TOKEN);
             } else if (activeLevelFilters.size < LEVEL_VALUES.length) {
                 params.set('levels', Array.from(activeLevelFilters).join(','));
             }
 
-            if (activeServerFilters.size > 0 && activeServerFilters.size < allServerNames.length) {
+            if (activeServerFilters.size === 0) {
+                params.set('servers', NONE_SELECTED_TOKEN);
+            } else if (activeServerFilters.size < allServerNames.length) {
                 params.set('servers', Array.from(activeServerFilters).join(','));
             }
 
@@ -1125,6 +1128,10 @@
                 return false;
             }
 
+            if (activeServerFilters.size === 0) {
+                return false;
+            }
+
             if (activeServerFilters.size > 0 && activeServerFilters.size < allServerNames.length) {
                 if (!activeServerFilters.has(log.server)) {
                     return false;
@@ -1243,8 +1250,10 @@
 
         function updateFilterCounts() {
             // Calculate level counts from only active servers
-            // If no servers are selected, use session totals (all servers)
-            if (activeServerFilters.size === 0 || activeServerFilters.size === allServerNames.length) {
+            // If no servers are selected, show zeroes.
+            if (activeServerFilters.size === 0) {
+                filterCounts = { error: 0, warning: 0, info: 0, debug: 0 };
+            } else if (activeServerFilters.size === allServerNames.length) {
                 filterCounts = { ...sessionCounts };
             } else {
                 const levelCounts = { error: 0, warning: 0, info: 0, debug: 0 };
